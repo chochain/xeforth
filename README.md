@@ -1,4 +1,39 @@
-# eForthX - eForth evolved
+# xeForth - experimental eForth - dynamically managed scripting for MPU
+
+A modern, high-performance, tokenized virtual machine (VM) designed to bridge the gap between low-level interactive execution and high-level scripting capabilities. Built entirely in pure C, this project targets Microprocessing Units (MPUs) and high-performance Crossover Processors, replacing Forth's traditional monolithic heap with a deterministic, real-time dynamic memory manager.
+
+## 🚀 Architectural Vision
+
+Traditional Forths rely on a contiguous, linear dictionary and manual memory layout, making them brilliant for bare-metal microcontrollers but highly rigid for modern scripting workloads (like dynamic string manipulation, runtime module loading, and clean crash recoveries). 
+
+This project re-engineers the Forth environment from the ground up:
+1. **Dynamic Memory Isolation:** Utilizes a Two-Level Segregated Fit (TLSF) allocator to manage dictionary nodes and strings in constant $O(1)$ time with predictable fragmentation.
+2. **MPU & Crossover Tier Targeting:** Optimized for high-frequency MPUs running RTOS or real-time OS layers, leveraging multi-megabyte memory spaces without inheriting full OS bloat.
+3. **True Scripting Ergonomics:** Introduces automatic scope-based and reference-counted string management, allowing memory-safe text processing without sacrificing Forth's rapid prototyping workflow.
+
+---
+
+## 🛠 Core Features
+
+### 1. Tokenized Bytecode Virtual Machine
+Unlike traditional direct-threaded Forths that jump to raw 32/64-bit pointers, this VM compiles source text into dense 8-bit or 16-bit virtual opcodes. 
+* **O(1) Token Table Lookup:** A central Token Table maps `Word ID -> Current Memory Address`. 
+* **Safe Memory Compaction:** If the dynamic allocator shifts memory blocks to optimize fragmentation, only the single index in the Token Table updates. Compiled bytecode strings remain untouched and unbroken.
+* **GCC Labels-as-Values:** The inner interpreter loop utilizes direct threading via `&&` function pointers for blazing-fast instruction dispatch, completely avoiding branch-prediction bottlenecks.
+
+### 2. TLSF-Backed Dynamic Dictionary
+Words are no longer trapped in chronological order. Vocabulary elements are treated as discrete, self-contained heap blocks.
+* **Hot-Swapping Modules:** Unload, update, or `import` specific code modules on the fly at runtime. Freeing an old module drops its memory safely back to the TLSF pool without corrupting adjacent words.
+* **Bulletproof Error Recovery:** Interactive terminal crashes sweep the current localized allocation pool, completely cleaning up half-compiled anonymous loops or orphaned strings without needing a hard system reboot.
+
+### 3. Managed String Engine
+Scripting is inherently text-heavy. This engine shifts Forth from character-and-length pairs `( c-addr u )` to single-cell **String Object Pointers (SOP)**.
+* **Deterministic Reference Counting:** String nodes carry a lightweight structural header tracking capacity, length, and references.
+* **Scope-Safe Execution:** High-level string manipulation words (`s+`, `s-split`, `s-replace`) transparently increment/decrement references. When a temporary string falls out of scope, it is freed *instantly* back to the heap, eliminating unpredictable Garbage Collection (GC) pauses.
+
+---
+
+## 📦 System Architecture
 
 This is an evolution and experimental work trying to modernize eForth. It is spun off from [eForth](https://github.com/chochain/eforth) and is very much a work in progress.
 
