@@ -1,8 +1,6 @@
-# xeForth - experimental eForth
+# xeForth - experimental eForth<br/>Dynamically managed scripting for MPU
 
-## Dynamically managed scripting for MPU
-
-xe4, A modern, high-performance, tokenized virtual machine (VM) designed to bridge the gap between low-level interactive execution and high-level scripting capabilities. Built entirely in pure C, this project targets Microprocessing Units (MPUs) and high-performance Crossover Processors, replacing Forth's traditional monolithic heap with a deterministic, real-time dynamic memory manager.
+A modern, high-performance, tokenized virtual machine (VM) designed to bridge the gap between low-level interactive execution and high-level scripting capabilities. Built entirely in pure C, this project targets Microprocessing Units (MPUs) and high-performance Crossover Processors, such as ESP32 and Raspberry Pi Pico, replacing Forth's traditional monolithic heap with a deterministic, real-time dynamic memory manager. Where MicroPython is a shrink-down version of Python, xeForth is a grown-up Forth.
 
 ## 🚀 Architectural Vision
 
