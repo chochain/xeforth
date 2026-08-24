@@ -163,7 +163,7 @@ typedef enum {
 ///                      |    pfa   |xxxxxxxx|
 ///                      +----------+--------+
 ///
-///  Code class on 32-bit system or WASM systems
+///  Code class on 32-bit system
 ///  +---------+---------+--------+
 ///  |  *name  |   xt    |  attr  |
 ///  +---------+---------+--------+
@@ -263,10 +263,8 @@ void dict_dump(int base);                 ///< dump dictionary
 void mem_dump(U32 addr, IU sz, int base); ///< dump memory frm addr...addr+sz
 void mem_stat();                          ///< display memory statistics
 ///@}
-///@name Javascript interface
+///@name LVGL api
 ///@{
-#if DO_WASM
-void native_api(VM &vm);
-#endif // DO_WASM
+void lvgl_api(VM &vm);
 ///@}
 #endif // __EFORTH_SRC_CEFORTH_H
