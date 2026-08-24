@@ -548,11 +548,7 @@ constexpr Code g_rom[] = {                 ///< ROM
     CODE("rnd",   PUSH(RND())),                             /// generate random number
     CODE("ms",    delay(POPI())),
     /// @}
-#if DO_WASM
-    CODE("JS",    native_api(vm)),                          /// Javascript interface
-#else    
     CODE("bye",   vm.state=STOP),
-#endif // DO_WASM
     CODE("boot",  dict.clear(find("boot") + 1); pmem.clear(sizeof(DU))),
 };                   
 int  g_romsz = sizeof(g_rom)/sizeof(Code);
@@ -567,26 +563,18 @@ int  g_romsz = sizeof(g_rom)/sizeof(Code);
 Code *prim_or_dict(IU w) {
     return IS_PRIM(w) ? (Code*)&prim[w & ~EXT_FLAG] : dict[w];
 }
-#if DO_WASM
-UFP Code::XT0 = 0;       ///< WASM xt is vtable index (0 is min)
-void dict_compile() {    ///< compile built-in words into dictionary
-    for (int i=0; i < g_romsz; i++) dict.push(&g_rom[i]);
-}
-void dict_validate() {}  ///> no need to adjust xt offset base
-
-#else // !DO_WASM
 UFP Code::XT0 = ~0;      ///< init to max value
 void dict_compile() {    ///< compile built-in words into dictionary
+    /// collect Code::XT0 i.e. xt base pointer
     for (int i=0; i < g_romsz; i++) {
-        Code *c = (Code*)&g_rom[i];
+        Code *c = (Code*)&g_rom[i];            ///< fetch built-in words
         if (c->pfa < Code::XT0) Code::XT0 = c->pfa;
-        dict.push((Code*)c);
+        dict.push((Code*)c);                   /// * dict[i] to g_rom
     }
     dict.readonly_below(g_romsz);              /// * ensure no freeing, see ~List()
 }
 
 void dict_validate() {
-    /// collect Code::XT0 i.e. xt base pointer
     UFP max = (UFP)0;
     for (int i=0; i < dict.idx; i++) {
         Code *g = (Code*)&g_rom[i], *c = dict[i];
@@ -608,7 +596,6 @@ void dict_validate() {
         LOGS(" bytes\n");
     }
 }
-#endif // DO_WASM
 ///====================================================================
 ///
 ///> ForthVM - Outer interpreter
