@@ -155,8 +155,15 @@ Anton Ertl said ["state-smartness is evil"](http://www.euroforth.org/ef98/ertl98
 
 ## References
 
+* ESP32-S3 4848S040 [ref](https://homeding.github.io/boards/esp32s3/panel-4848S040.htm)
+
 ## Revision History
 
+* CC: 20260820: ESP32-S3 specific implementation
+      + Core0 - WiFi/BT + Forth VM
+      + Core1 - LVGL
+      + exchange with FreeRTOS queues
+      + callback with id->xt map
 * CC: 20250806: branch off from [eForth](https://github.com/chochain/eforth)
     + Refactor
     ```
