@@ -5,15 +5,7 @@
 #include <iostream>      // cin, cout
 #include <fstream>       // ifstream
 #include <cstdint>
-
-#ifdef __APPLE__
-#include <sys/sysctl.h>
-#elif _WIN32 || _WIN64
-#include <windows.h>
-#include <string>
-#else // Linux || Cygwin
 #include <sys/sysinfo.h>
-#endif
 
 using namespace std;
 
@@ -21,7 +13,7 @@ extern void forth_init();
 extern int  forth_vm(const char *cmd, void(*)(int, const char*)=NULL);
 extern void forth_teardown();
 
-const char* APP_VERSION = "eForth v5.0";
+const char* APP_VERSION = "xeForth v1.0";
 ///====================================================================
 ///
 ///> Memory statistics - for heap, stack, external memory debugging
@@ -30,25 +22,13 @@ typedef uint64_t U64;
 void mem_stat() {
     cout << APP_VERSION;
 
-#ifdef __APPLE__
+#if (ARDUINO || ESP32)
     int64_t memsize;
     size_t len = sizeof(memsize);
     if (sysctlbyname("hw.memsize", &memsize, &len, NULL, 0) == 0) {
       cout << ", RAM " << (memsize >> 20) << " MB";
     }
-#elif _WIN32 || _WIN64
-	MEMORYSTATUSEX si;                        ///< Windows Memory Status
-    si.dwLength = sizeof(si);                 /// * Initialize the structure
-
-    if (GlobalMemoryStatusEx(&si)) {          /// * fetch from system
-	    int p = si.dwMemoryLoad;              /// * percentage of memory in use
-		U64 f = (U64)si.ullAvailPhys;         /// * available physical memory
-		U64 t = (U64)si.ullTotalPhys;         /// * total physical memory
-        cout << ", RAM " << (100 - p) << "% free (" << (f >> 20)
-  			 << " / " << (t >> 20) << " MB)";
-    }
-	else cerr << "ERR: Windows memory status fetch failed!";
-#else // Linux, Cygwin
+#else // !(ARDUINO || ESP32) i.e. Linux
     struct sysinfo si;
     if (sysinfo(&si) != -1) {
       U64 f = (U64)si.freeram * si.mem_unit;
@@ -57,7 +37,7 @@ void mem_stat() {
       cout << ", RAM " << static_cast<float>(p) * 0.1 << "% free (" << (f >> 20)
            << " / " << (t >> 20) << " MB)";
     }
-#endif
+#endif // (ARDUINO || ESP32)
 
     cout << endl;
 }
