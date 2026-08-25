@@ -1,0 +1,200 @@
+#include "EmbeddedWebServer.h"
+
+// Define a local structural size check to match our structural payload configurations
+#define MAX_FORTH_CMD_LEN 128
+typedef struct {
+    char command_text[MAX_FORTH_CMD_LEN];
+} web_msg_t;
+
+// Embed the responsive HTML interface cleanly inside the flash layout space
+const char index_html[] PROGMEM = R"XX(
+<!DOCTYPE html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forth Console</title>
+<style>
+  body {font-family:monospace;background:#1a1a1a;color:#00ff00;padding:20px;}
+  textarea {width:100%;height:120px;background:#000;color:#00ff00;border:1px solid #00ff00;padding:10px;font-size:16px;box-sizing:border-box;}
+  button{background:#00ff00;color:#000;border:none;padding:12px;font-weight:bold;cursor:pointer;margin-top:10px;width:100%;font-size:16px;}
+</style></head>
+<body>
+  <h2>📟 FORTH PIPELINE</h2>
+  <textarea id="code" placeholder="Enter commands..."></textarea>
+  <button onclick="send()">EXECUTE</button>
+  <script>
+    function send() {
+      let f=new FormData();
+      f.append("forth_code", document.getElementById("code").value);
+      fetch('/execute',{ method:'POST',body:f })
+      .then(r=>r.text())
+      .then(d=>console.log(d));
+    }
+  </script>
+</body></html>
+)XX";
+
+// Embed the HTML code cleanly as a static string block
+const char index_html[] PROGMEM = R"XX(
+<!-- Paste the index.html code layout content here -->
+)XX";
+
+const char *HTML_INDEX PROGMEM = R"XX(
+HTTP/1.1 200 OK
+Content-type:text/html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 Forth Console</title>
+    <style>
+        body { font-family: monospace; background: #1a1a1a; color: #00ff00; padding: 20px; }
+        textarea { width: 100%; height: 120px; background: #000; color: #00ff00; border: 1px solid #00ff00; padding: 10px; font-family: inherit; font-size: 16px; box-sizing: border-box; }
+        button { background: #00ff00; color: #000; border: none; padding: 12px 24px; font-weight: bold; cursor: pointer; margin-top: 10px; width: 100%; font-size: 16px; }
+        button:hover { background: #00cc00; }
+        #log { margin-top: 15px; border-top: 1px dashed #333; padding-top: 10px; color: #888; height: 150px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h2>📟 4848S040 FORTH PIPELINE</h2>
+    <textarea id="code" placeholder="Enter Logo or Forth commands here... e.g. 20 20 100 100 LOGO-LINE"></textarea>
+    <button onclick="sendCommand()">EXECUTE CODE</button>
+    <div id="log">Console Ready.</div>
+
+    <script>
+        function sendCommand() {
+            const input = document.getElementById("code").value;
+            const log = document.getElementById("log");
+            
+            // Build non-blocking AJAX pipeline
+            let formData = new FormData();
+            formData.append("forth_code", input);
+
+            fetch('/execute', { method: 'POST', body: formData })
+            .then(res => res.text())
+            .then(data => { log.innerHTML += "<br>⚡ Sent: " + input + " -> " + data; log.scrollTop = log.scrollHeight; })
+            .catch(err => { log.innerHTML += "<br>❌ Error pushing packet."; });
+        }
+    </script>
+</body>
+</html>
+
+)XX";
+
+#if 0
+<html>
+<head>
+  <meta charset='UTF-8'><title>eForth on ESP32</title>
+  <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+  <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+  <style>body{font-family:'Courier New',monospace;font-size:14px;}</style>
+</head>
+<body>
+    <div id='log' style='float:left;overflow:auto;height:100%;width:60%;
+         background-color:#f8f0f0;'>eForth 5.0</div>
+    <textarea id='tib' style='height:100%;width:40%;resize:none'
+        onkeydown='if (13===event.keyCode) forth()'></textarea>
+</body>
+<script>
+let log = document.getElementById('log')
+let tib = document.getElementById('tib')
+let idx = 0
+function send_post(url, ary) {
+    let id  = '_'+(idx++).toString()
+    let cmd = '\n---CMD'+id+'\n'
+    let req = ary.slice(0,30).join('\n')
+    log.innerHTML += '<div id='+id+'><font color=blue>'+
+                     req.replace(/\n/g,'<br/>')+'</font><br/></div>'
+    fetch(url, {
+        method: 'POST', headers: { 'Context-Type': 'text/plain' },
+        body: cmd+req+cmd
+     }).then(rsp=>rsp.text()).then(txt=>{
+        document.getElementById(id).innerHTML +=
+            txt.replace(/\n/g,'<br/>').replace(/\s/g,'&nbsp;')
+        log.scrollTop=log.scrollHeight
+        ary.splice(0,30)
+        if (ary.length > 0) send_post(url, ary)
+    })
+}
+function forth() {
+    let ary = tib.value.split('\n')
+    send_post('/input', ary)
+    tib.value = ''; tib.focus(); return false
+}
+window.onload = ()=>forth()
+</script></html>
+#endif 
+
+const char *HTML_CHUNKED PROGMEM = R"XX(
+HTTP/1.1 200 OK
+Content-type:text/plain
+Transfer-Encoding: chunked
+
+)XX";
+
+bool EmbeddedWebServer::begin(QueueHandle_t shared_queue, UBaseType_t task_priority) {
+    if (shared_queue == NULL) return false;
+    _outgoing_queue = shared_queue;
+
+    // Launch the background FreeRTOS execution thread on Core 0
+    // We pass "this" (the memory address of this class instance) into the 4th parameter slot!
+    BaseType_t xReturned = xTaskCreatePinnedToCore(
+        vTaskServerBridge,     // Static function bridge pointer
+        "Web_Async_Task",      // Task string identifier name
+        4096,                  // Task stack depth allocation (bytes)
+        (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE
+        task_priority,         // Priority assignment configuration
+        &_task_handle,         // Target task handle tracker
+        0                      // Pin strictly to Core 0 (leaving Core 1 free for LVGL)
+    );
+
+    return (xReturned == pdPASS);
+}
+
+void EmbeddedWebServer::runServerLoop() {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(_ssid, _password);
+    
+    while (WiFi.status() != WL_CONNECTED) {
+        vTaskDelay(pdMS_TO_TICKS(500)); 
+    }
+    
+    Serial.printf("\n[EmbeddedWebServer Class]: Dashboard live at http://%s\n", 
+                  WiFi.localIP().toString().c_str());
+
+    // Route A: Serve the UI Dashboard Home Page
+    _server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send_P(200, "text/html", index_html);
+    });
+
+    // Route B: Handle Incoming Async Data Submissions
+    // Using a C++ lambda expression that captures the 'this' instance context pointer cleanly via [this]
+    _server.on("/execute", HTTP_POST, [this](AsyncWebServerRequest *request){
+        if (request->hasParam("forth_code", true)) {
+            AsyncWebParameter* p = request->getParam("forth_code", true);
+            
+            web_msg_t msg;
+            strncpy(msg.command_text, p->value().c_str(), MAX_FORTH_CMD_LEN - 1);
+            msg.command_text[MAX_FORTH_CMD_LEN - 1] = '\0';
+
+            // Non-blocking payload push straight across threads using our member queue
+            if (xQueueSend(this->_outgoing_queue, &msg, 0) == pdTRUE) {
+                request->send(200, "text/plain", "Queued.");
+            } else {
+                request->send(500, "text/plain", "Queue Buffer Full Error");
+            }
+        } else {
+            request->send(400, "text/plain", "Bad Parameters");
+        }
+    });
+
+    // Start server. It binds system network handles to background core interrupts.
+    _server.begin();
+
+    while (1) {
+        // Core HTTP events are handled in the background via hardware network interrupts,
+        // so this main thread loop sleeps deeply to let other Core 0 tasks execute.
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+    
+
