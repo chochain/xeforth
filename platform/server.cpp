@@ -1,4 +1,8 @@
-#include "EmbeddedWebServer.h"
+///
+/// @file
+/// @brief Async Web Server class implementation
+///
+#include "server.h"
 
 // Define a local structural size check to match our structural payload configurations
 #define MAX_FORTH_CMD_LEN 128
@@ -6,15 +10,22 @@ typedef struct {
     char command_text[MAX_FORTH_CMD_LEN];
 } web_msg_t;
 
+const char *HTML_CHUNKED PROGMEM = R"XX(
+HTTP/1.1 200 OK
+Content-type:text/plain
+Transfer-Encoding: chunked
+
+)XX";
+
 // Embed the responsive HTML interface cleanly inside the flash layout space
 const char index_html[] PROGMEM = R"XX(
 <!DOCTYPE html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Forth Console</title>
 <style>
-  body {font-family:monospace;background:#1a1a1a;color:#00ff00;padding:20px;}
-  textarea {width:100%;height:120px;background:#000;color:#00ff00;border:1px solid #00ff00;padding:10px;font-size:16px;box-sizing:border-box;}
-  button{background:#00ff00;color:#000;border:none;padding:12px;font-weight:bold;cursor:pointer;margin-top:10px;width:100%;font-size:16px;}
+  body     { font-family:monospace; background:#1a1a1a; color:#00ff00; padding:20px; }
+  textarea { width:100%; height:120px; background:#000; color:#00ff00; border:1px solid #00ff00; padding:10px; font-size:16px; box-sizing:border-box; }
+  button   { background:#00ff00; color:#000; border:none; padding:12px; font-weight:bold; cursor:pointer; margin-top:10px; width:100%; font-size:16px; }
 </style></head>
 <body>
   <h2>📟 FORTH PIPELINE</h2>
@@ -32,6 +43,7 @@ const char index_html[] PROGMEM = R"XX(
 </body></html>
 )XX";
 
+#if 0
 // Embed the HTML code cleanly as a static string block
 const char index_html[] PROGMEM = R"XX(
 <!-- Paste the index.html code layout content here -->
@@ -41,46 +53,6 @@ const char *HTML_INDEX PROGMEM = R"XX(
 HTTP/1.1 200 OK
 Content-type:text/html
 
-<!DOCTYPE html>
-<html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32-S3 Forth Console</title>
-    <style>
-        body { font-family: monospace; background: #1a1a1a; color: #00ff00; padding: 20px; }
-        textarea { width: 100%; height: 120px; background: #000; color: #00ff00; border: 1px solid #00ff00; padding: 10px; font-family: inherit; font-size: 16px; box-sizing: border-box; }
-        button { background: #00ff00; color: #000; border: none; padding: 12px 24px; font-weight: bold; cursor: pointer; margin-top: 10px; width: 100%; font-size: 16px; }
-        button:hover { background: #00cc00; }
-        #log { margin-top: 15px; border-top: 1px dashed #333; padding-top: 10px; color: #888; height: 150px; overflow-y: auto; }
-    </style>
-</head>
-<body>
-    <h2>📟 4848S040 FORTH PIPELINE</h2>
-    <textarea id="code" placeholder="Enter Logo or Forth commands here... e.g. 20 20 100 100 LOGO-LINE"></textarea>
-    <button onclick="sendCommand()">EXECUTE CODE</button>
-    <div id="log">Console Ready.</div>
-
-    <script>
-        function sendCommand() {
-            const input = document.getElementById("code").value;
-            const log = document.getElementById("log");
-            
-            // Build non-blocking AJAX pipeline
-            let formData = new FormData();
-            formData.append("forth_code", input);
-
-            fetch('/execute', { method: 'POST', body: formData })
-            .then(res => res.text())
-            .then(data => { log.innerHTML += "<br>⚡ Sent: " + input + " -> " + data; log.scrollTop = log.scrollHeight; })
-            .catch(err => { log.innerHTML += "<br>❌ Error pushing packet."; });
-        }
-    </script>
-</body>
-</html>
-
-)XX";
-
-#if 0
 <html>
 <head>
   <meta charset='UTF-8'><title>eForth on ESP32</title>
@@ -122,14 +94,9 @@ function forth() {
 }
 window.onload = ()=>forth()
 </script></html>
-#endif 
-
-const char *HTML_CHUNKED PROGMEM = R"XX(
-HTTP/1.1 200 OK
-Content-type:text/plain
-Transfer-Encoding: chunked
 
 )XX";
+#endif 
 
 bool EmbeddedWebServer::begin(QueueHandle_t shared_queue, UBaseType_t task_priority) {
     if (shared_queue == NULL) return false;
