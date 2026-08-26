@@ -20,15 +20,15 @@
 [ 4848S040 IPS DISPLAY PANEL ]
 */
 ///====================================================================
-#include "soc/soc.h"                   /// * for brown out detector
-#include "soc/rtc_cntl_reg.h"          /// * RTC control registers
+#include "soc/soc.h"                      /// * for brown out detector
+#include "soc/rtc_cntl_reg.h"             /// * RTC control registers
 ///
 ///> ESP32 WiFi setup
 ///
 #include "platform/mcu.h"                 ///< MCU specific Forth words
 #include "platform/forth.h"               ///< Forth VM interface
 #include "platform/server.h"              ///< ESP32 Async Web Server
-#include "platform/lvgl.h"                ///< LVGL renderer interface
+#include "platform/xgl.h"                 ///< UI, LVGL+Touch interface
 
 const char *WIFI_SSID = "Amitofo_4F_5G";  ///< use your own SSID
 const char *WIFI_PASS = "25325754";       ///< and the password
