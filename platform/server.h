@@ -1,139 +1,45 @@
 ///
 /// @file
-/// @brief eForth ESP32 Web Serer connection and index
+/// @brief ESP32 Async Web Server
 /// 
 ///====================================================================
-#ifndef __EFORTH_PLATFORM_SERVER_H
-#define __EFORTH_PLATFORM_SERVER_H
+#ifndef EMBEDDED_WEB_SERVER_H
+#define EMBEDDED_WEB_SERVER_H
+
+#include <Arduino.h>
 #include <WiFi.h>
+#include <ESPAsyncWebServer.h>
 
-extern int forth_vm(const char *cmd, void(*callback)(int, const char*));
+class EmbeddedWebServer {
+private:
+    uint16_t       _port;
+    const char*    _ssid;
+    const char*    _password;
+    QueueHandle_t  _outgoing_queue;
+    TaskHandle_t   _task_handle;
+    AsyncWebServer _server;          // Direct compilation inclusion
 
-const char *HTML_INDEX PROGMEM = R"XX(
-HTTP/1.1 200 OK
-Content-type:text/html
+    // 🚨 FreeRTOS tasks inside classes MUST be declared as "static void"
+    static void vTaskServerBridge(void *pvParameters) {
+        // Cast the generic void pointer directly back into a class instance context
+        EmbeddedWebServer* instance = (EmbeddedWebServer*)pvParameters;
+        instance->runServerLoop();
+    }
 
-<html>
-<head>
-  <meta charset='UTF-8'><title>eForth on ESP32</title>
-  <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
-  <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
-  <style>body{font-family:'Courier New',monospace;font-size:14px;}</style>
-</head>
-<body>
-    <div id='log' style='float:left;overflow:auto;height:100%;width:60%;
-         background-color:#f8f0f0;'>eForth 5.0</div>
-    <textarea id='tib' style='height:100%;width:40%;resize:none'
-        onkeydown='if (13===event.keyCode) forth()'></textarea>
-</body>
-<script>
-let log = document.getElementById('log')
-let tib = document.getElementById('tib')
-let idx = 0
-function send_post(url, ary) {
-    let id  = '_'+(idx++).toString()
-    let cmd = '\n---CMD'+id+'\n'
-    let req = ary.slice(0,30).join('\n')
-    log.innerHTML += '<div id='+id+'><font color=blue>'+
-                     req.replace(/\n/g,'<br/>')+'</font><br/></div>'
-    fetch(url, {
-        method: 'POST', headers: { 'Context-Type': 'text/plain' },
-        body: cmd+req+cmd
-     }).then(rsp=>rsp.text()).then(txt=>{
-        document.getElementById(id).innerHTML +=
-            txt.replace(/\n/g,'<br/>').replace(/\s/g,'&nbsp;')
-        log.scrollTop=log.scrollHeight
-        ary.splice(0,30)
-        if (ary.length > 0) send_post(url, ary)
-    })
-}
-function forth() {
-    let ary = tib.value.split('\n')
-    send_post('/input', ary)
-    tib.value = ''; tib.focus(); return false
-}
-window.onload = ()=>forth()
-</script></html>
+    // This internal worker function handles the actual execution logic
+    void runServerLoop();
 
-)XX";
+public:
+    EmbeddedWebServer(const char* ssid, const char* password, uint16_t port = 80) :
+        _ssid(ssid),
+        _password(password),
+        _port(port),
+        _outgoing_queue(NULL),
+        _task_handle(NULL),
+        _server(port) {}
 
-const char *HTML_CHUNKED PROGMEM = R"XX(
-HTTP/1.1 200 OK
-Content-type:text/plain
-Transfer-Encoding: chunked
-
-)XX";
-    
-namespace ForthServer {
-    WiFiServer server;
-    WiFiClient client;
-    String     http_req;
-    
-    void setup(const char *ssid, const char *pass) {
-        WiFi.mode(WIFI_STA);
-        WiFi.begin(ssid, pass);
-        while (WiFi.status() != WL_CONNECTED) {
-            delay(500);
-            Serial.print(".");
-        }
-        server.begin(80);
-        Serial.print("WiFi Connected. ForthServer IP=");
-        Serial.print(WiFi.localIP());
-        Serial.println(":80");
-        // reserve string space
-        http_req.reserve(256);
-    }
-    int readline() {
-        http_req.clear();
-        while (client.connected()) {
-            if (client.available()) {
-                char c = client.read();
-                if (c == '\n') return 1;
-                if (c != '\r') http_req += c;
-            }
-        }
-        return 0;
-    }
-    void handle_index() {
-        client.println(HTML_INDEX);                 ///
-        delay(30);                   // give browser sometime to receive
-    }
-    void send_chunk(int len, const char *msg) {
-        Serial.print(msg);
-        client.println(len, HEX);
-        client.println(msg);
-        yield();
-    }
-    void handle_input() {
-        while (readline() && http_req.length()>0);  /// skip HTTP header
-        for (int i=0; i<4 && readline(); i++) {     /// find Forth command token
-            if (http_req.startsWith("---CMD")) break;
-        }
-        // process Forth command, return in chunks
-        client.println(HTML_CHUNKED);               /// send HTTP chunked header
-        for (int i=0; readline(); i++) {
-            if (http_req.startsWith("---CMD")) break;
-            if (http_req.length() > 0) {
-                Serial.println(http_req);           /// echo on console
-                forth_vm(http_req.c_str(), send_chunk);
-            }
-        }
-        send_chunk(0, "\r\n");                      /// close HTTP chunk stream
-    }
-    void handle_client() {                          /// uri router
-        if (!(client = server.available())) return;
-        while (readline()) {
-            if (http_req.startsWith("GET /")) {
-                handle_index();
-                break;
-            }
-            else if (http_req.startsWith("POST /input")) {
-                handle_input();
-                break;
-            }
-        }
-        client.stop();
-        yield();
-    }
+    // Establishes WiFi parameters and spins up the FreeRTOS background worker
+    bool begin(QueueHandle_t shared_queue, UBaseType_t task_priority);
 };
-#endif // __EFORTH_PLATFORM_SERVER_H
+
+#endif
