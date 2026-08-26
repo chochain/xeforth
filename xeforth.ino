@@ -25,13 +25,14 @@
 ///
 ///> ESP32 WiFi setup
 ///
-#include "platform/mcu.h"              ///< MCU specific Forth words
-#include "platform/forth.h"            ///< Forth VM interfaces
-#include "platform/server.h"           ///< ESP32 Async Web Server
-#include "platform/lvgl.h"             ///< ESP32 Async Web Server
+#include "platform/mcu.h"                 ///< MCU specific Forth words
+#include "platform/forth.h"               ///< Forth VM interface
+#include "platform/server.h"              ///< ESP32 Async Web Server
+#include "platform/lvgl.h"                ///< LVGL renderer interface
 
-const char *WIFI_SSID = "Amitofo-NV";  ///< use your own SSID
-const char *WIFI_PASS = "AlseTron";    ///< and the password
+const char *WIFI_SSID = "Amitofo_4F_5G";  ///< use your own SSID
+const char *WIFI_PASS = "25325754";       ///< and the password
+const int   WIFI_PORT = 80;               ///< and the password
 
 // Define structural payload contracts uniformly across your files
 #define MAX_FORTH_CMD_LEN 128
@@ -46,11 +47,11 @@ typedef struct {
 } vector_draw_packet_t;
 
 // Instantiate Global Message-Routing Pipelines
-QueueHandle_t webToForthQueue  = NULL;
-QueueHandle_t forthToLvglQueue = NULL;
+QueueHandle_t     webToForthQueue  = NULL;
+QueueHandle_t     forthToLvglQueue = NULL;
 
 // Instantiate the distinct, modular systems with custom parameters
-EmbeddedWebServer myWebServer("YOUR_SSID", "YOUR_PASSWORD", 80);
+EmbeddedWebServer myWebServer(WIFI_SSID, WIFI_PASSWORD, WIFI_PORT);
 ForthProcessor    myForthEngine(701, 10);
 LVGLRenderer      myUiRenderer(480, 480);
 
