@@ -2,11 +2,7 @@
 #define FORTH_PROCESSOR_H
 #include <Arduino.h>
 
-// Enforce raw C language linkage for your underlying Forth VM components
-extern "C" {
-    void forth_init_engine(void);
-    void forth_interpret_string(const char* text);
-}
+extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
 
 class ForthProcessor {
 private:
