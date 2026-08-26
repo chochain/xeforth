@@ -1,4 +1,8 @@
-#include "LVGLRenderer.h"
+///
+/// @file
+/// @brief ESP32-S3 4848S040 LVGL renderer interface
+///
+#include "lvgl.h"
 #include <esp_heap_caps.h>
 
 // Structural payload mapping matching your global Plumbing contract
