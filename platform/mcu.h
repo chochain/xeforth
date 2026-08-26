@@ -13,7 +13,7 @@
 ///     665ms src/ceforth vector-based, object-threaded
 ///     534ms src/ceforth, multi-threading, vector-based, object-threaded (with gcc -O3)
 ///
-const char *APP_VERSION = "eForth v5.0";
+const char *APP_VERSION = "xeForth v1.0";
 ///
 ///> interface to core module
 ///
@@ -79,12 +79,8 @@ const Code ops[] = {
     CODE("pinmode",IU p = POPI(); pinMode(p, POPI())),          // n p --
     CODE("in",     IU p = POPI(); PUSH(digitalRead(p))),        // p -- n
     CODE("out",    IU p = POPI(); digitalWrite(p, POPI())),     // n p --
-    CODE("adc",    IU p = POPI(); PUSH(analogRead(p))),         // p -- n
-    CODE("duty",   IU p = POPI(); analogWrite(p, POPI(), 255)), // n ch
-    CODE("attach", IU p = POPI(); ledcAttachPin(p, POPI())),    // ch p --
-    CODE("setup",  IU ch= POPI(); IU freq=POPI();               // res freq ch --
-                       ledcSetup(ch, freq, POPI())),
-    CODE("tone",   IU ch= POPI(); ledcWriteTone(ch, POPI())),   // duty ch --
+    CODE("ain",    IU p = POPI(); PUSH(analogRead(p))),         // p -- n
+    CODE("pwm",    IU p = POPI(); analogWrite(p, POPI())),      // n p --
     CODE("peek",   IU a = POPI(); PUSH(PEEK(a))),               // a -- n
     CODE("poke",   IU a = POPI(); POKE(a, POPI())),             // n a --
 };
