@@ -1,11 +1,8 @@
-#include "ForthProcessor.h"
+#include "forth.h"
 
 bool ForthProcessor::begin(QueueHandle_t shared_queue, UBaseType_t task_priority) {
     if (shared_queue == NULL) return false;
     _incoming_queue = shared_queue;
-
-    // 1. Initialize your custom underlying C Forth memory layout parameters
-    forth_init_engine();
 
     // 2. Launch the background FreeRTOS execution thread on Core 0
     // We pass "this" (the memory address of this class instance) into the 4th parameter slot!
@@ -55,15 +52,15 @@ void ForthProcessor::parseAndExecuteTokens(char* input_line) {
     char* save_ptr;
     // Extract the very first token word from the continuous text buffer
     // using the reentrant, thread-safe strtok_r function
-    char* token = strtok_r(input_line, " ", &save_ptr);
+    char* idiom = strtok_r(input_line, " ", &save_ptr);
     
-    while (token != NULL) {
+    while (idiom != NULL) {
         // Pass individual parsed tokens directly to your low-level C engine
         // by referencing their raw memory string pointers
-        forth_interpret_string(token); 
+        forth_vm(idiom, NULL); 
         
         // Seek out the next individual space-separated command segment
-        token = strtok_r(NULL, " ", &save_ptr);
+        idiom = strtok_r(NULL, " ", &save_ptr);
     }
 }
 
