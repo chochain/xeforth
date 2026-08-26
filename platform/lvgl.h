@@ -6,14 +6,14 @@
 
 class LVGLRenderer {
 private:
-    uint32_t      _screen_width;
-    uint32_t      _screen_height;
-    QueueHandle_t _incoming_vector_queue;
-    TaskHandle_t  _task_handle;
+    uint32_t           _screen_width;
+    uint32_t           _screen_height;
+    QueueHandle_t      _incoming_vector_queue;
+    TaskHandle_t       _task_handle;
     
     // LVGL drawing resources
-    lv_obj_t*     _canvas_obj;
-    uint8_t*      _canvas_buffer;
+    lv_obj_t*          _canvas_obj;
+    uint8_t*           _canvas_buffer;
     lv_draw_line_dsc_t _line_dsc;
 
     // 🚨 FreeRTOS tasks inside classes MUST be declared as "static void"
