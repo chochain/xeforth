@@ -35,17 +35,6 @@ const char *WIFI_PASS = "25325754";       ///< and the password
 const int   WIFI_PORT = 80;               ///< and the password
 
 // Define structural payload contracts uniformly across your files
-#define MAX_FORTH_CMD_LEN 128
-typedef struct {
-    char command_text[MAX_FORTH_CMD_LEN];
-} web_msg_t;
-
-typedef struct {
-    uint8_t  op_code;
-    int16_t  x1; int16_t  y1;
-    int16_t  x2; int16_t  y2;
-} vector_draw_packet_t;
-
 // Instantiate Global Message-Routing Pipelines
 QueueHandle_t     webToForthQueue  = NULL;
 QueueHandle_t     forthToLvglQueue = NULL;
