@@ -2,11 +2,11 @@
 #define LVGL_RENDERER_H
 
 #include <Arduino.h>
-#include <xlvgl.h>
+#include <lvgl.h>
 #include <Arduino_GFX_Library.h> // Include your standard GFX header
 #include <TAMC_GT911.h>
 #include <Wire.h>
-#include <lvgl.h>
+#include "xgl.h"
 
 #define SCREEN_WIDTH  480
 #define SCREEN_HEIGHT 480
@@ -53,11 +53,53 @@ public:
         _bus(NULL),
         _rgbpanel(NULL),
         _display(NULL),
-        _ts(
+        _ts(NULL),
         _canvas_obj(NULL),
         _canvas_buffer(NULL) {}
 
     bool begin(QueueHandle_t vector_queue, UBaseType_t task_priority);
+};
+
+#include <thread>
+#include <iostream>
+
+class SimulatedLVGL {
+private:
+    std::thread *_render_thread;
+    SimulationQueue<vector_draw_packet_t> *_vector_queue;
+
+    void runRenderLoop(void) {
+        std::cout << "[Thread: Simulated Core 1]: LVGL Engine loop active." << std::endl;
+        vector_draw_packet_t incoming_draw;
+
+        while (true) {
+            /* Drain all outstanding vector transformations generated from Core 0 */
+            while (_vector_queue->receive_non_blocking(incoming_draw)) {
+                if (incoming_draw.op_code == VECTOR_LINE) {
+                    /* This is where your Linux SDL2/SDL3 canvas plotting routine inserts */
+                    std::cout << "🎨 [Thread: Simulated Core 1]: Render Line Segment (" 
+                              << incoming_draw.x1 << "," << incoming_draw.y1 << ") to ("
+                              << incoming_draw.x2 << "," << incoming_draw.y2 << ")" << std::endl;
+                }
+            }
+
+            /* Emulate: lv_timer_handler() execution steps */
+            std::this_thread::sleep_for(std::chrono::milliseconds(16)); /* Lock loop target at ~60fps */
+        }
+    }
+
+public:
+    SimulatedLVGL(void) : _render_thread(NULL), _vector_queue(NULL) {}
+    
+    ~SimulatedLVGL() {
+        if (_render_thread) { delete _render_thread; }
+    }
+
+    void begin(SimulationQueue<vector_draw_packet_t> *vec_q) {
+        _vector_queue = vec_q;
+        _render_thread = new std::thread(&SimulatedLVGL::runRenderLoop, this);
+        _render_thread->detach();
+    }
 };
 
 #endif // LVGL_RENDERER_H
