@@ -1,12 +1,13 @@
 #ifndef LVGL_RENDERER_H
 #define LVGL_RENDERER_H
+#include "xque.h"
 
+#if (ARDUINO || ESP32)
 #include <Arduino.h>
 #include <lvgl.h>
 #include <Arduino_GFX_Library.h> // Include your standard GFX header
 #include <TAMC_GT911.h>
 #include <Wire.h>
-#include "xgl.h"
 
 #define SCREEN_WIDTH  480
 #define SCREEN_HEIGHT 480
@@ -60,16 +61,17 @@ public:
     bool begin(QueueHandle_t vector_queue, UBaseType_t task_priority);
 };
 
+#else // !(ARDUINO || ESP32)
 #include <thread>
 #include <iostream>
 
 class SimulatedLVGL {
 private:
     std::thread *_render_thread;
-    SimulationQueue<vector_draw_packet_t> *_vector_queue;
+    XQueue<vector_draw_packet_t> *_vector_queue;
 
     void runRenderLoop(void) {
-        std::cout << "[Thread: Simulated Core 1]: LVGL Engine loop active." << std::endl;
+        std::cout << "core1 LVGL> engine loop active." << std::endl;
         vector_draw_packet_t incoming_draw;
 
         while (true) {
@@ -77,7 +79,7 @@ private:
             while (_vector_queue->receive_non_blocking(incoming_draw)) {
                 if (incoming_draw.op_code == VECTOR_LINE) {
                     /* This is where your Linux SDL2/SDL3 canvas plotting routine inserts */
-                    std::cout << "🎨 [Thread: Simulated Core 1]: Render Line Segment (" 
+                    std::cout << "🎨 core1 LVGL>: render ("
                               << incoming_draw.x1 << "," << incoming_draw.y1 << ") to ("
                               << incoming_draw.x2 << "," << incoming_draw.y2 << ")" << std::endl;
                 }
@@ -95,12 +97,13 @@ public:
         if (_render_thread) { delete _render_thread; }
     }
 
-    void begin(SimulationQueue<vector_draw_packet_t> *vec_q) {
+    void begin(XQueue<vector_draw_packet_t> *vec_q) {
         _vector_queue = vec_q;
         _render_thread = new std::thread(&SimulatedLVGL::runRenderLoop, this);
         _render_thread->detach();
     }
 };
 
+#endif // (ARDUINO || ESP32)
 #endif // LVGL_RENDERER_H
 
