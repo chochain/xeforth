@@ -1,6 +1,6 @@
-#include "forth.h"
+#include "xforth.h"
 
-bool ForthProcessor::begin(QueueHandle_t shared_queue, UBaseType_t task_priority) {
+bool XForth::begin(QueueHandle_t shared_queue, UBaseType_t task_priority) {
     if (shared_queue == NULL) return false;
     _incoming_queue = shared_queue;
 
@@ -19,7 +19,7 @@ bool ForthProcessor::begin(QueueHandle_t shared_queue, UBaseType_t task_priority
     return (xReturned == pdPASS);
 }
 
-void ForthProcessor::runInterpreterLoop() {
+void XForth::runInterpreterLoop() {
     Serial.printf("[ForthProcessor Class ID %u]: Background thread online on Core 0.\n", _processor_id);
 
     // Fixed-size message structure matching your web server payload configuration
@@ -46,7 +46,7 @@ void ForthProcessor::runInterpreterLoop() {
     }
 }
 
-void ForthProcessor::parseAndExecuteTokens(char* input_line) {
+void XForth::parseAndExecuteTokens(char* input_line) {
     if (input_line == NULL || strlen(input_line) == 0) return;
 
     char* save_ptr;
@@ -63,5 +63,3 @@ void ForthProcessor::parseAndExecuteTokens(char* input_line) {
         idiom = strtok_r(NULL, " ", &save_ptr);
     }
 }
-
-#endif
