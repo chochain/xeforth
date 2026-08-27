@@ -2,7 +2,7 @@
 /// @file
 /// @brief ESP32-S3 4848S040 LVGL renderer interface
 ///
-#include "xlvgl.h"
+#include "xgl.h"
 #include <esp_heap_caps.h>
 
 // Example callback function required by LVGL to flush compiled frame buffers to the display
@@ -19,20 +19,6 @@ void my_disp_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t
     // Inform LVGL that the frame buffer flush is complete
     lv_disp_flush_ready(disp_drv);
 }
-
-// Structural payload mapping matching your global Plumbing contract
-typedef enum {
-    VECTOR_CLEAR,
-    VECTOR_LINE
-} vector_op_t;
-
-typedef struct {
-    uint8_t  op_code;
-    int16_t  x1;
-    int16_t  y1;
-    int16_t  x2;
-    int16_t  y2;
-} vector_draw_packet_t;
 
 bool LVGLRenderer::begin(QueueHandle_t vector_queue, UBaseType_t task_priority) {
     if (vector_queue == NULL) return false;
@@ -112,16 +98,6 @@ void LVGLRenderer::runRenderLoop() {
 }
 
 void LVGLRenderer::initHardwarePanel() {
-    // Paste your existing, verified 4848S040 ST7701 panel 
-    // and touch initialization setup block lines right here.
-    // e.g., lv_init(); my_st7701_driver_init();
-    gfx->begin();
-    gfx->fillScreen(BLACK);
-
-    lv_init();
-}
-
-void LVGLRenderer::initHardwarePanel() {
     // 1. Initialize the 3-wire SPI Bus used to transmit configuration registers to the ST7701S
     // (Pins vary based on your specific 4848S040 board version - match your working example code)
     _bus = new Arduino_ESP32SPI(
@@ -177,9 +153,11 @@ void LVGLRenderer::initHardwarePanel() {
     pinMode(38, OUTPUT);
     digitalWrite(38, HIGH); // Backlight ON
 
+    _display->fillScreen(BLACK);
+    
     Wire.begin(TOUCH_SDA, TOUCH_SCL); 
-    ts.begin();
-    ts.setRotation(ROTATION_NORMAL);
+    _ts->begin();
+    _ts->setRotation(ROTATION_NORMAL);
 }
 
 
