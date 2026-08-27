@@ -14,6 +14,7 @@ extern int  forth_vm(const char *cmd, void(*)(int, const char*)=NULL);
 extern void forth_teardown();
 
 const char* APP_VERSION = "xeForth v1.0";
+
 ///====================================================================
 ///
 ///> Memory statistics - for heap, stack, external memory debugging
@@ -64,7 +65,7 @@ void forth_include(const char *fn) {
 ///
 /// main program - Note: Arduino and ESP32 have their own main-loop
 ///
-int main(int ac, char* av[]) {
+int main0(int ac, char* av[]) {
     forth_init();                             ///> initialize dictionary
     
     mem_stat();                               ///> show memory status
@@ -76,3 +77,50 @@ int main(int ac, char* av[]) {
     return 0;
 }
 ///====================================================================
+#include "xque.h"
+#include "xforth.h"
+#include "xgl.h"
+#include <iostream>
+
+int main(int argc, char *argv[]) {
+    std::cout << "=== CONFIGURING LINUX DUAL-CORE THREAD PLUMBING PIPELINES ===" << std::endl;
+
+    /* 1. Allocate the communication queues safely on the host system memory map */
+    XQueue<web_cmd_packet_t>     webToForthPipeline(10);
+    XQueue<vector_draw_packet_t> forthToLvglPipeline(50);
+
+    /* 2. Instantiate and connect our structural systems */
+    SimulatedForth forthEngine;
+    SimulatedLVGL  graphicsEngine;
+
+    forthEngine.begin(&webToForthPipeline, &forthToLvglPipeline);
+    graphicsEngine.begin(&forthToLvglPipeline);
+
+    /* Give background loops a brief moment to initialize console logs */
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    std::cout << "\n[System Environment Prompt]: Simulating User entering text commands..." << std::endl;
+
+    static const char *cmd[] = {
+        "10  10 200 10  LOGO-LINE",
+        "200 10 200 200 LOGO-LINE",
+        "200 200 10 10  LOGO-LINE"        
+    };
+
+    /* 3. Simulate an HTTP POST action pushing data into the front of the bridge */
+    web_cmd_packet_t mock_browser_post;
+    for (int i=0; i < (int)(sizeof(cmd)/sizeof(char*)); i++) {
+        std::cout << "\nUser: " << cmd[i] << std::endl;
+        
+        strncpy(mock_browser_post.raw_forth_text, (char*)cmd[i], MAX_WEB_LINE_LEN);
+    
+        /* Blast it into the server queue pipe */
+        webToForthPipeline.send_non_blocking(mock_browser_post);
+
+        /* Keep host process active to trace data conversions outputting live across the threads */
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+    std::cout << "Done! ^C to terminate worker threads..." << std::endl;
+    
+    return 0;
+}
