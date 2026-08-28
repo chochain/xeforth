@@ -20,9 +20,9 @@ void my_disp_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t
     lv_disp_flush_ready(disp_drv);
 }
 
-bool LVGLRenderer::begin(QueueHandle_t vector_queue, UBaseType_t task_priority) {
-    if (vector_queue == NULL) return false;
-    _incoming_vector_queue = vector_queue;
+bool LVGLRenderer::begin(QueueHandle_t vec_q, UBaseType_t task_priority) {
+    if (vec_q == NULL) return false;
+    _vec_q = vec_q;
 
     // Launch the background FreeRTOS execution thread pinned strictly to CORE 1
     // We pass "this" into the 4th parameter slot to bridge the class context natively.
@@ -32,10 +32,9 @@ bool LVGLRenderer::begin(QueueHandle_t vector_queue, UBaseType_t task_priority) 
         8192,                  // Task stack depth allocation (bytes)
         (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE
         task_priority,         // High priority layer to prevent frame stutter
-        &_task_handle,         // Target task handle tracker
+        &_task,                // Target task handle tracker
         1                      // Pinned strictly to CORE 1
     );
-
     return (xReturned == pdPASS);
 }
 
@@ -45,17 +44,17 @@ void LVGLRenderer::runRenderLoop() {
 
     // 2. Allocate the 480x480 true-color frame buffer strictly in External PSRAM
     // 480 * 480 * 2 bytes per pixel (RGB565) = 460.8 KB
-    size_t buffer_size = _screen_width * _screen_height * sizeof(lv_color_t);
-    _canvas_buffer = (uint8_t*)heap_caps_malloc(buffer_size, MALLOC_CAP_SPIRAM);
+    size_t buf_sz = _width * _height * sizeof(lv_color_t);
+    _canvas_buf = (uint8_t*)heap_caps_malloc(buf_sz, MALLOC_CAP_SPIRAM);
     
-    if (_canvas_buffer == NULL) {
+    if (_canvas_buf == NULL) {
         Serial.println("Fatal: Failed to allocate frame canvas buffer in PSRAM!");
         vTaskDelete(NULL);
     }
 
     // 3. Instantiate the LVGL Canvas widget container
     _canvas_obj = lv_canvas_create(lv_scr_act());
-    lv_canvas_set_buffer(_canvas_obj, _canvas_buffer, _screen_width, _screen_height, LV_IMG_CF_TRUE_COLOR);
+    lv_canvas_set_buffer(_canvas_obj, _canvas_buf, _width, _height, LV_IMG_CF_TRUE_COLOR);
     lv_canvas_fill_bg(_canvas_obj, lv_color_black(), LV_OPA_COVER);
 
     // 4. Initialize your v8.4 drawing descriptors once to prevent setup bloat
@@ -65,22 +64,22 @@ void LVGLRenderer::runRenderLoop() {
 
     Serial.println("[LVGLRenderer]: Arduino_GFX drivers active inside Core 1 thread task.");
 
-    vector_draw_packet_t incoming_packet;
+    vector_draw_packet_t vec;
 
     while (1) {
         // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
-        while (xQueueReceive(_incoming_vector_queue, &incoming_packet, 0) == pdTRUE) {
+        while (xQueueReceive(_vec_q, &vec, 0) == pdTRUE) {
             
-            switch (incoming_packet.op_code) {
+            switch (vec.op_code) {
                 case VECTOR_LINE: {
                     // Map parameters straight to an LVGL v8.4 coordinate array structure
-                    lv_point_t points[2] = {
-                        { incoming_packet.x1, incoming_packet.y1 },
-                        { incoming_packet.x2, incoming_packet.y2 }
+                    lv_point_t pts[2] = {
+                        { vec.x1, vec.y1 },
+                        { vec.x2, vec.y2 }
                     };
                     
                     // Direct vector drawing call into our isolated canvas object
-                    lv_canvas_draw_line(_canvas_obj, points, 2, &_line_dsc);
+                    lv_canvas_draw_line(_canvas_obj, pts, 2, &_line_dsc);
                     break;
                 }
                 case VECTOR_CLEAR:
@@ -105,7 +104,7 @@ void LVGLRenderer::initHardwarePanel() {
     );
 
     // 2. Configure the sub-pixel high-speed parallel RGB timing blocks
-    _rgbpanel = new ESP32RGBPanel(
+    _panel = new ESP32RGBPanel(
         18 /* DE */, 17 /* VSYNC */, 16 /* HSYNC */, 21 /* PCLK */,
         4 /* R0 */, 3 /* R1 */, 2 /* R2 */, 1 /* R3 */, 0 /* R4 */,
         10 /* G0 */, 9 /* G1 */, 8 /* G2 */, 7 /* G3 */, 6 /* G4 */, 5 /* G5 */,
@@ -116,7 +115,7 @@ void LVGLRenderer::initHardwarePanel() {
 
     // 3. Chain components into the main RGB Display wrapper constructor instance
     _display = new Arduino_RGB_Display(
-        _screen_width, _screen_height, _rgbpanel, 0 /* RGB rotation step */, 
+        _width, _height, _panel, 0 /* RGB rotation step */, 
         true /* auto_flush */, _bus, 38 /* GFX hardware RESET pin pointer line */, 
         st7701_4848s040_init_operations, sizeof(st7701_4848s040_init_operations)
     );
@@ -130,15 +129,15 @@ void LVGLRenderer::initHardwarePanel() {
     // Allocate frame buffers for LVGL's internal rendering engine (Separate from your Forth Canvas)
     // Allocating in Internal SRAM keeps rendering speeds high, or use PSRAM if memory is tight
     static lv_disp_draw_buf_t draw_buf;
-    size_t lv_buf_size = _screen_width * 40 * sizeof(lv_color_t); // 40-row strip buffer
-    lv_color_t *buf1   = (lv_color_t *)heap_caps_malloc(lv_buf_size, MALLOC_CAP_INTERNAL);
-    lv_disp_draw_buf_init(&draw_buf, buf1, NULL, _screen_width * 40);
+    size_t lv_buf_sz = _width * 40 * sizeof(lv_color_t); // 40-row strip buffer
+    lv_color_t *buf1 = (lv_color_t *)heap_caps_malloc(lv_buf_sz, MALLOC_CAP_INTERNAL);
+    lv_disp_draw_buf_init(&draw_buf, buf1, NULL, _width * 40);
 
     // Register display driver variables to hook LVGL straight to Arduino_GFX
     static lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res   = _screen_width;
-    disp_drv.ver_res   = _screen_height;
+    disp_drv.hor_res   = _width;
+    disp_drv.ver_res   = _height;
     disp_drv.flush_cb  = my_disp_flush_cb;
     disp_drv.draw_buf  = &draw_buf;
     
@@ -147,7 +146,7 @@ void LVGLRenderer::initHardwarePanel() {
     
     lv_disp_drv_register(&disp_drv);
 
-    _ts = new TAMC_GT911(TOUCH_SDA, TOUCH_SCL, TOUCH_INT, TOUCH_RST, width, height);
+    _ts = new TAMC_GT911(TOUCH_SDA, TOUCH_SCL, TOUCH_INT, TOUCH_RST, _width, _height);
 
     // activate devices
     pinMode(38, OUTPUT);
