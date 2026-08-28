@@ -98,9 +98,9 @@ window.onload = ()=>forth()
 )XX";
 #endif 
 
-bool EmbeddedWebServer::begin(QueueHandle_t shared_queue, UBaseType_t task_priority) {
-    if (shared_queue == NULL) return false;
-    _outgoing_queue = shared_queue;
+bool EmbeddedWebServer::begin(xQueWeb *web_q, UBaseType_t task_priority) {
+    if (web_q == NULL) return false;
+    _out_q = web_q;
 
     // Launch the background FreeRTOS execution thread on Core 0
     // We pass "this" (the memory address of this class instance) into the 4th parameter slot!
@@ -110,10 +110,9 @@ bool EmbeddedWebServer::begin(QueueHandle_t shared_queue, UBaseType_t task_prior
         4096,                  // Task stack depth allocation (bytes)
         (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE
         task_priority,         // Priority assignment configuration
-        &_task_handle,         // Target task handle tracker
+        &_task,                // Target task handle tracker
         0                      // Pin strictly to Core 0 (leaving Core 1 free for LVGL)
     );
-
     return (xReturned == pdPASS);
 }
 
@@ -129,28 +128,28 @@ void EmbeddedWebServer::runServerLoop() {
                   WiFi.localIP().toString().c_str());
 
     // Route A: Serve the UI Dashboard Home Page
-    _server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->send_P(200, "text/html", index_html);
+    _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req){
+        req->send_P(200, "text/html", index_html);
     });
 
     // Route B: Handle Incoming Async Data Submissions
     // Using a C++ lambda expression that captures the 'this' instance context pointer cleanly via [this]
-    _server.on("/execute", HTTP_POST, [this](AsyncWebServerRequest *request){
-        if (request->hasParam("forth_code", true)) {
-            AsyncWebParameter* p = request->getParam("forth_code", true);
+    _server.on("/execute", HTTP_POST, [this](AsyncWebServerRequest *req){
+        if (req->hasParam("forth_code", true)) {
+            AsyncWebParameter* p = req->getParam("forth_code", true);
             
-            web_msg_t msg;
-            strncpy(msg.command_text, p->value().c_str(), MAX_FORTH_CMD_LEN - 1);
-            msg.command_text[MAX_FORTH_CMD_LEN - 1] = '\0';
+            que_msg_t msg;
+            strncpy(msg.buf, p->value().c_str(), QUE_BUF_SZ - 1);
+            msg.buf[QUE_BUF_SZ - 1] = '\0';
 
             // Non-blocking payload push straight across threads using our member queue
-            if (xQueueSend(this->_outgoing_queue, &msg, 0) == pdTRUE) {
-                request->send(200, "text/plain", "Queued.");
+            if (xQueueSend(this->_out_q, &msg, 0) == pdTRUE) {
+                req->send(200, "text/plain", "Queued.");
             } else {
-                request->send(500, "text/plain", "Queue Buffer Full Error");
+                req->send(500, "text/plain", "Queue Buffer Full Error");
             }
         } else {
-            request->send(400, "text/plain", "Bad Parameters");
+            req->send(400, "text/plain", "Bad Parameters");
         }
     });
 
