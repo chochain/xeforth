@@ -1,5 +1,5 @@
-#ifndef FORTH_PROCESSOR_H
-#define FORTH_PROCESSOR_H
+#ifndef _XFORTH_H
+#define _XFORTH_H
 
 #if (ARDUINO || ESP32)
 #include <Arduino.h>
@@ -10,11 +10,11 @@ extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
 
 class XForth {
 private:
-    uint32_t        _core_id;
-    TaskHandle_t    _task;
-    uint32_t        _tick;                   /// heartbeat_delay_ms
-    QueueHandle_t   _in_q;
-    GLQueueHandle_t _out_q;
+    uint32_t     _core_id;
+    TaskHandle_t _task;
+    uint32_t     _tick;                   /// heartbeat_delay_ms
+    xQueWeb      *_in_q;
+    xQueGL       *_out_q;
 
     // 🚨 FreeRTOS tasks inside classes MUST be declared as "static void"
     static void vTaskForthBridge(void *pv) {
@@ -37,7 +37,7 @@ public:
         _task(NULL) {}
 
     // Initializes internal configurations and spins up the FreeRTOS worker thread
-    bool begin(QueueHandle_t in_q, GLQueueHandle_t out_q, UBaseType_t task_priority);
+    bool begin(xQueWeb *in_q, xQueGL *out_q, UBaseType_t task_priority);
 };
 
 #else // !(ARDUINO || ESP32)
@@ -47,7 +47,7 @@ public:
 
 /* Raw C linkage wrapper stub matching your eventual low-level token execution files */
 extern "C" {
-    void forth_vm(const char *token, GLQueueHandle_t out_pipe) {
+    void forth_vm(const char *token, xQueGL *out_q) {
         static const draw_vec_t draw_cmd[] = {
             { VECTOR_LINE, 10, 10, 200, 10 },
             { VECTOR_LINE, 200, 10, 200, 200 },
@@ -57,16 +57,16 @@ extern "C" {
         /* If token parsing matches an action, your primitive constructs a graphics packet */
         if (strcmp(token, "LOGO-LINE") == 0) {
             std::cout << "core0 xforth> processing: " << token << std::endl;
-            out_pipe->send_non_blocking(draw_cmd[idx++]);
+            out_q->send_non_blocking(draw_cmd[idx++]);
         }
     }
 }
 
 class SimulatedForth {
 private:
-    std::thread     *_thread;
-    QueueHandle_t   _in_q;
-    GLQueueHandle_t _out_q;
+    std::thread  *_thread;
+    xQueWeb      *_in_q;
+    xQueGL       *_out_q;
 
     void runInterpreterLoop(void) {
         std::cout << "core0> Forth VM listening pipeline online." << std::endl;
@@ -97,7 +97,7 @@ public:
         if (_thread) { delete _thread; }
     }
 
-    void begin(QueueHandle_t in_q, GLQueueHandle_t out_q) {
+    void begin(xQueWeb *in_q, xQueGL *out_q, UBaseType_t task_priority) {
         _in_q  = in_q;
         _out_q = out_q;
         /* Spin up thread execution path using standard object context injection */
