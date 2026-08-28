@@ -2,7 +2,11 @@
 #define _XQUE_H
 #include "xbridge.h"
 
-#if !(ARDUINO || ESP32)
+#if (ARDUINO || ESP32)
+typedef void *xQueWeb;        // void *QueueHandle_t
+typedef void *xQueGL;
+
+#else // !(ARDUINO || ESP32)
 #include <queue>
 #include <mutex>
 #include <condition_variable>
@@ -50,8 +54,8 @@ public:
     }
 };
 
-typedef XQueue<que_msg_t>  *QueueHandle_t;
-typedef XQueue<draw_vec_t> *GLQueueHandle_t;
+typedef XQueue<que_msg_t>  xQueWeb;
+typedef XQueue<draw_vec_t> xQueGL;
 
-#endif // !(ARDUINO || ESP32)
+#endif // (ARDUINO || ESP32)
 #endif // _XQUE_H
