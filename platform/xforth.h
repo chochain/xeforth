@@ -10,33 +10,34 @@ extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
 
 class XForth {
 private:
-    uint32_t      _processor_id;
-    uint32_t      _heartbeat_delay_ms;
-    QueueHandle_t _incoming_queue;
-    TaskHandle_t  _task_handle;
+    uint32_t        _core_id;
+    TaskHandle_t    _task;
+    uint32_t        _tick;                   /// heartbeat_delay_ms
+    QueueHandle_t   _in_q;
+    GLQueueHandle_t _out_q;
 
     // 🚨 FreeRTOS tasks inside classes MUST be declared as "static void"
-    static void vTaskForthBridge(void *pvParameters) {
+    static void vTaskForthBridge(void *pv) {
         // Cast the generic void pointer directly back into a class instance context
-        ForthProcessor* instance = (ForthProcessor*)pvParameters;
-        instance->runInterpreterLoop();
+        XForth *vm = (XForth*)pv;
+        vm->runInterpreterLoop();
     }
 
     // This internal worker function handles the actual execution logic
     void runInterpreterLoop();
     
     // Thread-safe internal helper to tokenize and split compound string buffers
-    void parseAndExecuteTokens(char* input_line);
+    void parseAndExecuteTokens(char* cmd);
 
 public:
     XForth(uint32_t id, uint32_t heartbeat_ms) : 
-        _processor_id(id), 
-        _heartbeat_delay_ms(heartbeat_ms), 
-        _incoming_queue(NULL), 
-        _task_handle(NULL) {}
+        _core_id(id), 
+        _ticks(pdMS_TO_TICKS(heartbeat_ms)), 
+        _in_q(NULL), 
+        _task(NULL) {}
 
     // Initializes internal configurations and spins up the FreeRTOS worker thread
-    bool begin(QueueHandle_t shared_queue, UBaseType_t task_priority);
+    bool begin(QueueHandle_t in_q, GLQueueHandle_t out_q, UBaseType_t task_priority);
 };
 
 #else // !(ARDUINO || ESP32)
@@ -46,8 +47,8 @@ public:
 
 /* Raw C linkage wrapper stub matching your eventual low-level token execution files */
 extern "C" {
-    inline void mock_forth_interpret_token(const char *token, XQueue<vector_draw_packet_t> *out_pipe) {
-        static const vector_draw_packet_t draw_cmd[] = {
+    void forth_vm(const char *token, GLQueueHandle_t out_pipe) {
+        static const draw_vec_t draw_cmd[] = {
             { VECTOR_LINE, 10, 10, 200, 10 },
             { VECTOR_LINE, 200, 10, 200, 200 },
             { VECTOR_LINE, 200, 200, 10, 10 }
@@ -63,45 +64,45 @@ extern "C" {
 
 class SimulatedForth {
 private:
-    std::thread *_worker_thread;
-    XQueue<web_cmd_packet_t> *_in_queue;
-    XQueue<vector_draw_packet_t> *_out_queue;
+    std::thread     *_thread;
+    QueueHandle_t   _in_q;
+    GLQueueHandle_t _out_q;
 
     void runInterpreterLoop(void) {
         std::cout << "core0> Forth VM listening pipeline online." << std::endl;
-        web_cmd_packet_t rx_msg;
+        que_msg_t rx_msg;
 
         while (true) {
             /* Block indefinitely using 0% host CPU cycles until a web packet lands */
-            _in_queue->receive_blocking(rx_msg);
-            std::cout << "core0 xforth> cmd received: " << rx_msg.raw_forth_text << std::endl;
+            _in_q->receive_blocking(rx_msg);
+            std::cout << "core0 xforth> cmd received: " << rx_msg.buf << std::endl;
 
             /* Parse text bytes via reentrant thread-safe strtok_r logic matching your hardware architecture */
-            char buffer[MAX_WEB_LINE_LEN];
-            strncpy(buffer, rx_msg.raw_forth_text, MAX_WEB_LINE_LEN);
+            char buf[QUE_BUF_SZ];
+            strncpy(buf, rx_msg.buf, QUE_BUF_SZ);
             
             char *save_ptr;
-            char *token = strtok_r(buffer, " ", &save_ptr);
-            while (token != NULL) {
-                mock_forth_interpret_token(token, _out_queue);
-                token = strtok_r(NULL, " ", &save_ptr);
+            char *idiom = strtok_r(buf, " ", &save_ptr);
+            while (idiom != NULL) {
+                forth_vm(idiom, _out_q);
+                idiom = strtok_r(NULL, " ", &save_ptr);
             }
         }
     }
 
 public:
-    SimulatedForth(void) : _worker_thread(NULL), _in_queue(NULL), _out_queue(NULL) {}
+    SimulatedForth(void) : _thread(NULL), _in_q(NULL), _out_q(NULL) {}
     
     ~SimulatedForth() {
-        if (_worker_thread) { delete _worker_thread; }
+        if (_thread) { delete _thread; }
     }
 
-    void begin(XQueue<web_cmd_packet_t> *in_q, XQueue<vector_draw_packet_t> *out_q) {
-        _in_queue = in_q;
-        _out_queue = out_q;
+    void begin(QueueHandle_t in_q, GLQueueHandle_t out_q) {
+        _in_q  = in_q;
+        _out_q = out_q;
         /* Spin up thread execution path using standard object context injection */
-        _worker_thread = new std::thread(&SimulatedForth::runInterpreterLoop, this);
-        _worker_thread->detach(); /* Run detached in background */
+        _thread = new std::thread(&SimulatedForth::runInterpreterLoop, this);
+        _thread->detach(); /* Run detached in background */
     }
 };
 
