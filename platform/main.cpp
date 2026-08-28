@@ -86,8 +86,8 @@ int main(int argc, char *argv[]) {
     std::cout << "=== CONFIGURING LINUX DUAL-CORE THREAD PLUMBING PIPELINES ===" << std::endl;
 
     /* 1. Allocate the communication queues safely on the host system memory map */
-    XQueue<web_cmd_packet_t>     webToForthPipeline(10);
-    XQueue<vector_draw_packet_t> forthToLvglPipeline(50);
+    XQueue<que_msg_t>  webToForthPipeline(10);
+    XQueue<draw_vec_t> forthToLvglPipeline(50);
 
     /* 2. Instantiate and connect our structural systems */
     SimulatedForth forthEngine;
@@ -108,19 +108,19 @@ int main(int argc, char *argv[]) {
     };
 
     /* 3. Simulate an HTTP POST action pushing data into the front of the bridge */
-    web_cmd_packet_t mock_browser_post;
+    que_msg_t mock_post;
     for (int i=0; i < (int)(sizeof(cmd)/sizeof(char*)); i++) {
         std::cout << "\nUser: " << cmd[i] << std::endl;
         
-        strncpy(mock_browser_post.raw_forth_text, (char*)cmd[i], MAX_WEB_LINE_LEN);
+        strncpy(mock_post.buf, (char*)cmd[i], QUE_BUF_SZ);
     
         /* Blast it into the server queue pipe */
-        webToForthPipeline.send_non_blocking(mock_browser_post);
+        webToForthPipeline.send_non_blocking(mock_post);
 
         /* Keep host process active to trace data conversions outputting live across the threads */
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
-    std::cout << "Done! ^C to terminate worker threads..." << std::endl;
+    std::cout << "\nDone! ^C to terminate worker threads..." << std::endl;
     
     return 0;
 }
