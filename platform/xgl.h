@@ -1,5 +1,5 @@
-#ifndef LVGL_RENDERER_H
-#define LVGL_RENDERER_H
+#ifndef _XGL_H
+#define _XGL_H
 #include "xque.h"
 
 #if (ARDUINO || ESP32)
@@ -17,11 +17,11 @@
 #define TOUCH_INT  4     // B0, might blip on start up
 #define TOUCH_RST  5     // B1
 
-class LVGLRenderer {
+class xGL {
 private:
     uint32_t             _width;
     uint32_t             _height;
-    QueueHandle_t        _in_q;
+    xQueGL               _in_q;
     TaskHandle_t         _task;
     
     // 📺 Embedded Arduino_GFX Hardware Display Infrastructure Components
@@ -36,7 +36,7 @@ private:
     lv_draw_line_dsc_t   _line_dsc;
 
     static void vTaskRenderBridge(void *pv) {
-        LVGLRenderer *gl = (LVGLRenderer*)pv;
+        xGL *gl = (xGL*)pv;
         gl->runRenderLoop();
     }
 
@@ -58,7 +58,7 @@ public:
         _canvas_obj(NULL),
         _canvas_buffer(NULL) {}
 
-    bool begin(QueueHandle_t in_q, UBaseType_t task_priority);
+    bool begin(xQueGL *in_q, UBaseType_t task_priority);
 };
 
 #else // !(ARDUINO || ESP32)
@@ -67,8 +67,8 @@ public:
 
 class SimulatedLVGL {
 private:
-    std::thread     *_thread;
-    GLQueueHandle_t _vec_q;
+    std::thread *_thread;
+    xQueGL      *_vec_q;
 
     void runRenderLoop(void) {
         std::cout << "core1 LVGL> engine loop active." << std::endl;
@@ -97,7 +97,7 @@ public:
         if (_thread) { delete _thread; }
     }
 
-    void begin(GLQueueHandle_t vec_q) {
+    void begin(xQueGL *vec_q, UBaseType_t task_priority) {
         _vec_q = vec_q;
         _thread = new std::thread(&SimulatedLVGL::runRenderLoop, this);
         _thread->detach();
@@ -105,5 +105,5 @@ public:
 };
 
 #endif // (ARDUINO || ESP32)
-#endif // LVGL_RENDERER_H
+#endif // _XGL_H
 

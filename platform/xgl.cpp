@@ -20,7 +20,7 @@ void my_disp_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t
     lv_disp_flush_ready(disp_drv);
 }
 
-bool LVGLRenderer::begin(QueueHandle_t vec_q, UBaseType_t task_priority) {
+bool xGL::begin(QueueHandle_t vec_q, UBaseType_t task_priority) {
     if (vec_q == NULL) return false;
     _vec_q = vec_q;
 
@@ -38,7 +38,7 @@ bool LVGLRenderer::begin(QueueHandle_t vec_q, UBaseType_t task_priority) {
     return (xReturned == pdPASS);
 }
 
-void LVGLRenderer::runRenderLoop() {
+void xGL::runRenderLoop() {
     // 1. Fire up your working v8.4 physical panel display driver code
     initHardwarePanel();
 
@@ -64,7 +64,7 @@ void LVGLRenderer::runRenderLoop() {
 
     Serial.println("[LVGLRenderer]: Arduino_GFX drivers active inside Core 1 thread task.");
 
-    vector_draw_packet_t vec;
+    draw_vec_t vec;
 
     while (1) {
         // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
@@ -96,7 +96,7 @@ void LVGLRenderer::runRenderLoop() {
     }
 }
 
-void LVGLRenderer::initHardwarePanel() {
+void xGL::initHardwarePanel() {
     // 1. Initialize the 3-wire SPI Bus used to transmit configuration registers to the ST7701S
     // (Pins vary based on your specific 4848S040 board version - match your working example code)
     _bus = new Arduino_ESP32SPI(
