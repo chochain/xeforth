@@ -1,8 +1,9 @@
 #include "xforth.h"
 
-bool XForth::begin(QueueHandle_t shared_queue, UBaseType_t task_priority) {
-    if (shared_queue == NULL) return false;
-    _incoming_queue = shared_queue;
+bool XForth::begin(QueueHandle_t in_q, QueueHandle_t out_q, UBaseType_t task_priority) {
+    if (in_q == NULL) return false;
+    _in_q  = in_q;
+    _out_q = out_q;
 
     // 2. Launch the background FreeRTOS execution thread on Core 0
     // We pass "this" (the memory address of this class instance) into the 4th parameter slot!
@@ -15,49 +16,39 @@ bool XForth::begin(QueueHandle_t shared_queue, UBaseType_t task_priority) {
         &_task_handle,         // Target task handle tracker
         0                      // Pin strictly to Core 0 (leaving Core 1 free for LVGL)
     );
-
     return (xReturned == pdPASS);
 }
 
 void XForth::runInterpreterLoop() {
     Serial.printf("[ForthProcessor Class ID %u]: Background thread online on Core 0.\n", _processor_id);
 
-    // Fixed-size message structure matching your web server payload configuration
-    // This lives on the task stack, avoiding global system heap fragmentation!
-    #define MAX_FORTH_CMD_LEN 128
-    typedef struct {
-        char command_text[MAX_FORTH_CMD_LEN];
-    } web_msg_t;
-
     web_msg_t rx_msg;
-
     while (1) {
         // Wait indefinitely (portMAX_DELAY) using 0% CPU cycles until a packet hits the queue
-        if (xQueueReceive(_incoming_queue, &rx_msg, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(_in_q, &rx_msg, portMAX_DELAY) == pdTRUE) {
             
-            Serial.printf("\n[Forth Class Interface]: Evaluating incoming string array -> %s\n", rx_msg.command_text);
+            Serial.printf("\n[Forth Class Interface]: Evaluating incoming string array -> %s\n", rx_msg.cmd);
             
             // Execute non-fragmenting multi-token text processing
-            parseAndExecuteTokens(rx_msg.command_text);
+            parseAndExecuteTokens(rx_msg.cmd);
         }
-        
         // Brief safety heartbeat yield hook
-        vTaskDelay(pdMS_TO_TICKS(_heartbeat_delay_ms));
+        vTaskDelay(_ticks);
     }
 }
 
-void XForth::parseAndExecuteTokens(char* input_line) {
-    if (input_line == NULL || strlen(input_line) == 0) return;
+void XForth::parseAndExecuteTokens(char* cmd) {
+    if (cmd == NULL || strlen(cmd) == 0) return;
 
-    char* save_ptr;
     // Extract the very first token word from the continuous text buffer
     // using the reentrant, thread-safe strtok_r function
-    char* idiom = strtok_r(input_line, " ", &save_ptr);
+    char* save_ptr;
+    char* idiom = strtok_r(cmd, " ", &save_ptr);
     
     while (idiom != NULL) {
         // Pass individual parsed tokens directly to your low-level C engine
         // by referencing their raw memory string pointers
-        forth_vm(idiom, NULL); 
+        forth_vm(idiom, _out_q);
         
         // Seek out the next individual space-separated command segment
         idiom = strtok_r(NULL, " ", &save_ptr);
