@@ -86,20 +86,20 @@ int main(int argc, char *argv[]) {
     std::cout << "=== CONFIGURING LINUX DUAL-CORE THREAD PLUMBING PIPELINES ===" << std::endl;
 
     /* 1. Allocate the communication queues safely on the host system memory map */
-    XQueue<que_msg_t>  webToForthPipeline(10);
-    XQueue<draw_vec_t> forthToLvglPipeline(50);
+    xQueWeb webToForthQueue(10);
+    xQueGL  forthToLvglQueue(50);
 
     /* 2. Instantiate and connect our structural systems */
     SimulatedForth forthEngine;
     SimulatedLVGL  graphicsEngine;
 
-    forthEngine.begin(&webToForthPipeline, &forthToLvglPipeline);
-    graphicsEngine.begin(&forthToLvglPipeline);
+    forthEngine.begin(&webToForthQueue, &forthToLvglQueue, 5);
+    graphicsEngine.begin(&forthToLvglQueue, 10);
 
     /* Give background loops a brief moment to initialize console logs */
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    std::cout << "\n[System Environment Prompt]: Simulating User entering text commands..." << std::endl;
+    std::cout << "\nSimulating User entering text commands..." << std::endl;
 
     static const char *cmd[] = {
         "10  10 200 10  LOGO-LINE",
@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
         strncpy(mock_post.buf, (char*)cmd[i], QUE_BUF_SZ);
     
         /* Blast it into the server queue pipe */
-        webToForthPipeline.send_non_blocking(mock_post);
+        webToForthQueue.send_non_blocking(mock_post);
 
         /* Keep host process active to trace data conversions outputting live across the threads */
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
