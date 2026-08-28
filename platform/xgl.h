@@ -19,25 +19,25 @@
 
 class LVGLRenderer {
 private:
-    uint32_t             _screen_width;
-    uint32_t             _screen_height;
-    QueueHandle_t        _incoming_vector_queue;
-    TaskHandle_t         _task_handle;
+    uint32_t             _width;
+    uint32_t             _height;
+    QueueHandle_t        _in_q;
+    TaskHandle_t         _task;
     
     // 📺 Embedded Arduino_GFX Hardware Display Infrastructure Components
     Arduino_DataBus      *_bus;
-    ESP32RGBPanel        *_rgbpanel;
+    ESP32RGBPanel        *_panel;
     Arduino_RGB_Display  *_display; // Standard class wrapping RGB panel logic
     TAMC_GT911           *_ts;
 
     // LVGL internal canvas properties
     lv_obj_t             *_canvas_obj;
-    uint8_t              *_canvas_buffer;
+    uint8_t              *_canvas_buf;
     lv_draw_line_dsc_t   _line_dsc;
 
-    static void vTaskRenderBridge(void *pvParameters) {
-        LVGLRenderer* instance = (LVGLRenderer*)pvParameters;
-        instance->runRenderLoop();
+    static void vTaskRenderBridge(void *pv) {
+        LVGLRenderer *gl = (LVGLRenderer*)pv;
+        gl->runRenderLoop();
     }
 
     void runRenderLoop();
@@ -47,18 +47,18 @@ private:
 
 public:
     LVGLRenderer(uint32_t width = SCREEN_WIDTH, uint32_t height = SCREEN_HEIGHT) :
-        _screen_width(width),
-        _screen_height(height),
-        _incoming_vector_queue(NULL),
-        _task_handle(NULL),
+        _width(width),
+        _height(height),
+        _in_q(NULL),
+        _task(NULL),
         _bus(NULL),
-        _rgbpanel(NULL),
+        _panel(NULL),
         _display(NULL),
         _ts(NULL),
         _canvas_obj(NULL),
         _canvas_buffer(NULL) {}
 
-    bool begin(QueueHandle_t vector_queue, UBaseType_t task_priority);
+    bool begin(QueueHandle_t in_q, UBaseType_t task_priority);
 };
 
 #else // !(ARDUINO || ESP32)
@@ -67,21 +67,21 @@ public:
 
 class SimulatedLVGL {
 private:
-    std::thread *_render_thread;
-    XQueue<vector_draw_packet_t> *_vector_queue;
+    std::thread     *_thread;
+    GLQueueHandle_t _vec_q;
 
     void runRenderLoop(void) {
         std::cout << "core1 LVGL> engine loop active." << std::endl;
-        vector_draw_packet_t incoming_draw;
+        draw_vec_t vec;
 
         while (true) {
             /* Drain all outstanding vector transformations generated from Core 0 */
-            while (_vector_queue->receive_non_blocking(incoming_draw)) {
-                if (incoming_draw.op_code == VECTOR_LINE) {
+            while (_vec_q->receive_non_blocking(vec)) {
+                if (vec.op_code == VECTOR_LINE) {
                     /* This is where your Linux SDL2/SDL3 canvas plotting routine inserts */
                     std::cout << "🎨 core1 LVGL>: render ("
-                              << incoming_draw.x1 << "," << incoming_draw.y1 << ") to ("
-                              << incoming_draw.x2 << "," << incoming_draw.y2 << ")" << std::endl;
+                              << vec.x1 << "," << vec.y1 << ") to ("
+                              << vec.x2 << "," << vec.y2 << ")" << std::endl;
                 }
             }
 
@@ -91,16 +91,16 @@ private:
     }
 
 public:
-    SimulatedLVGL(void) : _render_thread(NULL), _vector_queue(NULL) {}
+    SimulatedLVGL(void) : _thread(NULL), _vec_q(NULL) {}
     
     ~SimulatedLVGL() {
-        if (_render_thread) { delete _render_thread; }
+        if (_thread) { delete _thread; }
     }
 
-    void begin(XQueue<vector_draw_packet_t> *vec_q) {
-        _vector_queue = vec_q;
-        _render_thread = new std::thread(&SimulatedLVGL::runRenderLoop, this);
-        _render_thread->detach();
+    void begin(GLQueueHandle_t vec_q) {
+        _vec_q = vec_q;
+        _thread = new std::thread(&SimulatedLVGL::runRenderLoop, this);
+        _thread->detach();
     }
 };
 
