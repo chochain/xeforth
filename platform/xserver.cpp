@@ -2,13 +2,7 @@
 /// @file
 /// @brief Async Web Server class implementation
 ///
-#include "server.h"
-
-// Define a local structural size check to match our structural payload configurations
-#define MAX_FORTH_CMD_LEN 128
-typedef struct {
-    char command_text[MAX_FORTH_CMD_LEN];
-} web_msg_t;
+#include "xserver.h"
 
 const char *HTML_CHUNKED PROGMEM = R"XX(
 HTTP/1.1 200 OK
@@ -98,7 +92,7 @@ window.onload = ()=>forth()
 )XX";
 #endif 
 
-bool EmbeddedWebServer::begin(xQueWeb *web_q, UBaseType_t task_priority) {
+bool XServer::begin(xQueWeb *web_q, int priority) {
     if (web_q == NULL) return false;
     _out_q = web_q;
 
@@ -109,14 +103,14 @@ bool EmbeddedWebServer::begin(xQueWeb *web_q, UBaseType_t task_priority) {
         "Web_Async_Task",      // Task string identifier name
         4096,                  // Task stack depth allocation (bytes)
         (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE
-        task_priority,         // Priority assignment configuration
+        priority,              // Priority assignment configuration
         &_task,                // Target task handle tracker
         0                      // Pin strictly to Core 0 (leaving Core 1 free for LVGL)
     );
     return (xReturned == pdPASS);
 }
 
-void EmbeddedWebServer::runServerLoop() {
+void XServer::runServerLoop() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(_ssid, _password);
     
@@ -124,7 +118,7 @@ void EmbeddedWebServer::runServerLoop() {
         vTaskDelay(pdMS_TO_TICKS(500)); 
     }
     
-    Serial.printf("\n[EmbeddedWebServer Class]: Dashboard live at http://%s\n", 
+    Serial.printf("\n[XServer Class]: Dashboard live at http://%s\n", 
                   WiFi.localIP().toString().c_str());
 
     // Route A: Serve the UI Dashboard Home Page
