@@ -186,9 +186,6 @@ void words(int base) {
 }
 void ss_dump(VM &vm, bool forced) {
     if (load_dp) return;                  /// * skip when including file
-#if DO_WASM    
-    if (!forced) { fout << "ok" << ENDL; return; }
-#endif // DO_WASM
     static char buf[34];                  ///< static buffer
     auto rdx = [](DU v, int b) {          ///< display v by radix
 #if USE_FLOAT
@@ -251,7 +248,7 @@ void dict_dump(int base) {
 }
 ///====================================================================
 ///
-///> Javascript/WASM interface
+///> LVGL interface
 ///
 #if DO_WASM
 #define POP() ({ DU n=TOS; TOS=SS.pop(); n; })
