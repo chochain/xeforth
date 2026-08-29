@@ -19,14 +19,6 @@ typedef  condition_variable COND_VAR;
 #define  WAIT(cv,g)         (cv).wait(_xlck_, g)           /** wait for condition */
 #define  NOTIFY(cv)         (cv).notify_one()              /** wake up one task   */
 #define  NOTIFY_ALL(cv)     (cv).notify_all();
-
-#ifdef _POSIX_VERSION
-#include <sched.h>                    /// CPU affinity
-#endif // _POSIX_VERSION
-
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE                    /** Emscripten needs this */
-#endif
 #endif // DO_MULTITASK
 ///
 /// array class template (so we don't have dependency on C++ STL)
@@ -127,6 +119,16 @@ struct ALIGNAS VM {
 #endif // DO_MULTITASK
 };
 ///
+///@name VM and stack access macros
+///@{
+#define TOS     (vm.tos)           /**< Top of stack                   */
+#define SS      (vm.ss)            /**< parameter stack (per task)     */
+#define IP      (vm.ip)            /**< instruction pointer (per task) */
+#define RS      (vm.rs)            /**< return stack (per task)        */
+#define PUSH(v) (SS.push(TOS), TOS = v)
+#define POP()   ({ DU n=TOS; TOS=SS.pop(); n; })
+#define POPI()  (UINT(POP()))
+///}
 ///@name Code flag masking options
 ///@{
 #define UDF_ATTR   0x1             /** user defined word    */
