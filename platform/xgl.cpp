@@ -20,7 +20,7 @@ void my_disp_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t
     lv_disp_flush_ready(disp_drv);
 }
 
-bool xGL::begin(QueueHandle_t vec_q, UBaseType_t task_priority) {
+bool XGL::begin(xQueGL *vec_q, int priority) {
     if (vec_q == NULL) return false;
     _vec_q = vec_q;
 
@@ -31,17 +31,18 @@ bool xGL::begin(QueueHandle_t vec_q, UBaseType_t task_priority) {
         "LVGL_Render_Task",    // Task string identifier name
         8192,                  // Task stack depth allocation (bytes)
         (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE
-        task_priority,         // High priority layer to prevent frame stutter
+        priority,              // High priority layer to prevent frame stutter
         &_task,                // Target task handle tracker
         1                      // Pinned strictly to CORE 1
     );
     return (xReturned == pdPASS);
 }
 
-void xGL::runRenderLoop() {
+void XGL::runRenderLoop() {
     // 1. Fire up your working v8.4 physical panel display driver code
     initHardwarePanel();
 
+#if 0    
     // 2. Allocate the 480x480 true-color frame buffer strictly in External PSRAM
     // 480 * 480 * 2 bytes per pixel (RGB565) = 460.8 KB
     size_t buf_sz = _width * _height * sizeof(lv_color_t);
@@ -61,9 +62,28 @@ void xGL::runRenderLoop() {
     lv_draw_line_dsc_init(&_line_dsc);
     _line_dsc.color = lv_color_make(0, 255, 0); // Neo-Green Logo theme color
     _line_dsc.width = 2;                        // 2-pixel stroke thickness
+#endif
 
-    Serial.println("[LVGLRenderer]: Arduino_GFX drivers active inside Core 1 thread task.");
-
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_make(10, 12, 16), 0);
+    
+    // ==================== PANEL 2: SCROLLING TERMINAL CANVAS (Bottom) ====================
+    _term_log = lv_textarea_create(lv_scr_act());
+    lv_obj_set_size(_term_log, _width - 20, _height - 20);
+    lv_obj_align(_term_log, LV_ALIGN_BOTTOM_MID, 0, -10);
+    
+    // Force a classic retro-monospaced terminal color layout
+    lv_obj_set_style_bg_color(_term_log, lv_color_make(5, 6, 8), 0);
+    lv_obj_set_style_text_color(_term_log, lv_color_make(50, 255, 100), 0); // Terminal Green
+    lv_obj_set_style_border_color(_term_log, lv_color_make(35, 40, 50), 0);
+    
+    // Hide standard cursor adjustments to prevent user selection interference
+    lv_textarea_set_cursor_click_pos(_term_log, false);
+    
+    // Add Boot Greetings Text String
+    lv_textarea_set_text(_term_log, "xeForth v1.0 Initialized.\nListening for Stream Packets...\nType 'help' via Serial line.\n\n");
+    
+    Serial.println("core1 XGL> Arduino_GFX drivers active.");
+    
     draw_vec_t vec;
 
     while (1) {
@@ -72,18 +92,25 @@ void xGL::runRenderLoop() {
             
             switch (vec.op_code) {
                 case VECTOR_LINE: {
+#if 0                    
                     // Map parameters straight to an LVGL v8.4 coordinate array structure
                     lv_point_t pts[2] = {
                         { vec.x1, vec.y1 },
                         { vec.x2, vec.y2 }
                     };
-                    
-                    // Direct vector drawing call into our isolated canvas object
                     lv_canvas_draw_line(_canvas_obj, pts, 2, &_line_dsc);
+#endif                    
+                    // Direct vector drawing call into our isolated canvas object
+                    lv_textarea_add_text(_term_log, "hit here"));
+    
+                    // Auto-scroll logic: lock view frame to bottom lines
+                    uint32_t txt_len = strlen(lv_textarea_get_text(_term_log));
+                    lv_textarea_set_cursor_pos(_term_log, txt_len);
                     break;
                 }
                 case VECTOR_CLEAR:
-                    lv_canvas_fill_bg(_canvas_obj, lv_color_black(), LV_OPA_COVER);
+//                    lv_canvas_fill_bg(_canvas_obj, lv_color_black(), LV_OPA_COVER);
+                    lv_textarea_set_text(_term_log, "");
                     break;
             }
         }
@@ -96,42 +123,52 @@ void xGL::runRenderLoop() {
     }
 }
 
-void xGL::initHardwarePanel() {
+void XGL::initHardwarePanel() {
     // 1. Initialize the 3-wire SPI Bus used to transmit configuration registers to the ST7701S
     // (Pins vary based on your specific 4848S040 board version - match your working example code)
     _bus = new Arduino_ESP32SPI(
-        -1 /* DC */, 39 /* CS */, 48 /* SCK */, 47 /* MOSI */, -1 /* MISO */, VSPI_HOST
-    );
+        GFX_NOT_DEFINED /* DC */, 39 /* CS */, 48 /* SCK */, 47 /* MOSI */, GFX_NOT_DEFINED /* MISO */);
 
     // 2. Configure the sub-pixel high-speed parallel RGB timing blocks
-    _panel = new ESP32RGBPanel(
+    _panel = new Arduino_ESP32RGBPanel(
         18 /* DE */, 17 /* VSYNC */, 16 /* HSYNC */, 21 /* PCLK */,
-        4 /* R0 */, 3 /* R1 */, 2 /* R2 */, 1 /* R3 */, 0 /* R4 */,
-        10 /* G0 */, 9 /* G1 */, 8 /* G2 */, 7 /* G3 */, 6 /* G4 */, 5 /* G5 */,
-        15 /* B0 */, 14 /* B1 */, 13 /* B2 */, 12 /* B3 */, 11 /* B4 */,
-        1 /* hsync_polarity */, 10 /* hsync_front_porch */, 8 /* hsync_pulse_width */, 50 /* hsync_back_porch */,
-        1 /* vsync_polarity */, 10 /* vsync_front_porch */, 8 /* vsync_pulse_width */, 20 /* vsync_back_porch */
+        11 /* R0 */, 12 /* R1 */, 13 /* R2 */, 14 /* R3 */, 0  /* R4 */,
+        8  /* G0 */, 20 /* G1 */, 3  /* G2 */, 46 /* G3 */, 9  /* G4 */, 10 /* G5 */,
+        4  /* B0 */, 5  /* B1 */, 6  /* B2 */, 7  /* B3 */, 15 /* B4 */,
+        1  /* hsync_polarity */, 10 /* hsync_front_porch */, 8  /* hsync_pulse_width */, 50 /* hsync_back_porch */,
+        1  /* vsync_polarity */, 10 /* vsync_front_porch */, 8  /* vsync_pulse_width */, 20 /* vsync_back_porch */,
+        1  /* pclk_active_neg */,   // read from falling edge, a little more breathing room
+        9000000 /* pixel clock */   // <-- CRUCIAL FIX: Forcibly drops the clock to 9MHz (from 18MHz) to free up PSRAM bus bandwidth!
     );
 
     // 3. Chain components into the main RGB Display wrapper constructor instance
     _display = new Arduino_RGB_Display(
         _width, _height, _panel, 0 /* RGB rotation step */, 
-        true /* auto_flush */, _bus, 38 /* GFX hardware RESET pin pointer line */, 
-        st7701_4848s040_init_operations, sizeof(st7701_4848s040_init_operations)
+        true /* auto_flush */, _bus, -1 /* GFX hardware RESET pin pointer line */, 
+        st7701_type9_init_operations, sizeof(st7701_type9_init_operations)
     );
 
-    // Start the display driver
-    _display->begin();
+    // 4. Touch screen driver
+    _ts = new TAMC_GT911(TOUCH_SDA, TOUCH_SCL, TOUCH_INT, TOUCH_RST, _width, _height);
 
     // 4. Initialize Core LVGL framework engine configurations
     lv_init();
 
+    static uint32_t buffer_pixel_size = SCREEN_WIDTH * 40;
+    disp_draw_buf = (lv_color_t *)ps_malloc(buffer_pixel_size * sizeof(lv_color_t));
+    if (disp_draw_buf == NULL) while(1);
+    
+    lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, buffer_pixel_size);
+
     // Allocate frame buffers for LVGL's internal rendering engine (Separate from your Forth Canvas)
     // Allocating in Internal SRAM keeps rendering speeds high, or use PSRAM if memory is tight
+    // Allocate a high-speed 40-line rendering slice block inside internal PSRAM memory
     static lv_disp_draw_buf_t draw_buf;
-    size_t lv_buf_sz = _width * 40 * sizeof(lv_color_t); // 40-row strip buffer
-    lv_color_t *buf1 = (lv_color_t *)heap_caps_malloc(lv_buf_sz, MALLOC_CAP_INTERNAL);
-    lv_disp_draw_buf_init(&draw_buf, buf1, NULL, _width * 40);
+    static uint32_t           buf_sz = _width * 40;       // 40-row strip buffer
+    lv_color_t *buf1 = (lv_color_t *)ps_malloc(buf_sz * sizeof(lv_color_t));
+    if (buf1==NULL) while(1);
+    
+    lv_disp_draw_buf_init(&draw_buf, buf1, NULL, buf_sz);
 
     // Register display driver variables to hook LVGL straight to Arduino_GFX
     static lv_disp_drv_t disp_drv;
@@ -146,14 +183,13 @@ void xGL::initHardwarePanel() {
     
     lv_disp_drv_register(&disp_drv);
 
-    _ts = new TAMC_GT911(TOUCH_SDA, TOUCH_SCL, TOUCH_INT, TOUCH_RST, _width, _height);
-
-    // activate devices
+    // activate display and touch panel
     pinMode(38, OUTPUT);
-    digitalWrite(38, HIGH); // Backlight ON
-
-    _display->fillScreen(BLACK);
+    digitalWrite(38, HIGH);               // Backlight ON
     
+    _display->begin();
+    _display->fillScreen(BLACK);
+
     Wire.begin(TOUCH_SDA, TOUCH_SCL); 
     _ts->begin();
     _ts->setRotation(ROTATION_NORMAL);
