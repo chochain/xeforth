@@ -1,4 +1,4 @@
-///
+/// -*- mode: c++ -*-
 /// @file
 /// @brief xeForth implemented for ESP32
 ///
@@ -26,9 +26,6 @@
 ///> ESP32 WiFi setup
 ///
 #include "platform/mcu.h"                 ///< MCU specific Forth words
-#include "platform/forth.h"               ///< Forth VM interface
-#include "platform/server.h"              ///< ESP32 Async Web Server
-#include "platform/xgl.h"                 ///< UI, LVGL+Touch interface
 
 const char *WIFI_SSID = "Amitofo_4F_5G";  ///< use your own SSID
 const char *WIFI_PASS = "25325754";       ///< and the password
@@ -36,20 +33,20 @@ const int   WIFI_PORT = 80;               ///< and the password
 
 // Define structural payload contracts uniformly across your files
 // Instantiate Global Message-Routing Pipelines
-QueueHandle_t     webToForthQueue  = NULL;
-QueueHandle_t     forthToLvglQueue = NULL;
+xQueWeb *webToForthQueue  = NULL;
+xQueGL  *forthToLvglQueue = NULL;
 
 // Instantiate the distinct, modular systems with custom parameters
-EmbeddedWebServer myWebServer(WIFI_SSID, WIFI_PASSWORD, WIFI_PORT);
-ForthProcessor    myForthEngine(701, 10);
-LVGLRenderer      myUiRenderer(480, 480);
+XServer myWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
+XForth  myForthEngine(701, 10);
+XGL     myUiRenderer(480, 480);
 
 void setup() {
     Serial.begin(115200);
 
     // 1. Build the non-fragmenting communications pipeline channels
-    webToForthQueue  = xQueueCreate(10, sizeof(web_msg_t));
-    forthToLvglQueue = xQueueCreate(50, sizeof(vector_draw_packet_t));
+    webToForthQueue  = (xQueWeb*)xQueueCreate(10, sizeof(que_msg_t));
+    forthToLvglQueue = (xQueGL* )xQueueCreate(50, sizeof(draw_vec_t));
 
     if (webToForthQueue == NULL || forthToLvglQueue == NULL) {
         Serial.println("Critical: Failed to generate system pipelines.");
@@ -62,7 +59,7 @@ void setup() {
     myWebServer.begin(webToForthQueue, 6);
 
     // 3. Deploy Forth VM Interpreter Engine ──> Core 0 (Priority 5)
-    myForthEngine.begin(webToForthQueue, 5);
+    myForthEngine.begin(webToForthQueue, forthToLvglQueue, 5);
 
     // 4. Deploy High-Performance Graphic Canvas Engine ──> Core 1 (Priority 10)
     // We give the UI the highest priority layer to guarantee responsive drawing updates
