@@ -4,10 +4,10 @@
 
 #if (ARDUINO || ESP32)
 #include <Arduino.h>
-#include <lvgl.h>
 #include <Arduino_GFX_Library.h> // Include your standard GFX header
 #include <TAMC_GT911.h>
 #include <Wire.h>
+#include <lvgl.h>
 
 #define SCREEN_WIDTH  480
 #define SCREEN_HEIGHT 480
@@ -17,26 +17,26 @@
 #define TOUCH_INT  4     // B0, might blip on start up
 #define TOUCH_RST  5     // B1
 
-class xGL {
+class XGL {
 private:
-    uint32_t             _width;
-    uint32_t             _height;
-    xQueGL               _in_q;
-    TaskHandle_t         _task;
+    uint32_t              _width;
+    uint32_t              _height;
+    xQueGL                *_in_q;
+    TaskHandle_t          _task;
     
     // 📺 Embedded Arduino_GFX Hardware Display Infrastructure Components
-    Arduino_DataBus      *_bus;
-    ESP32RGBPanel        *_panel;
-    Arduino_RGB_Display  *_display; // Standard class wrapping RGB panel logic
-    TAMC_GT911           *_ts;
+    Arduino_DataBus       *_bus;
+    Arduino_ESP32RGBPanel *_panel;
+    Arduino_RGB_Display   *_display; // Standard class wrapping RGB panel logic
+    TAMC_GT911            *_ts;
 
     // LVGL internal canvas properties
-    lv_obj_t             *_canvas_obj;
-    uint8_t              *_canvas_buf;
-    lv_draw_line_dsc_t   _line_dsc;
+    lv_obj_t              *_term_log;
+    uint8_t               *_canvas_buf;
+    lv_draw_line_dsc_t    _line_dsc;
 
     static void vTaskRenderBridge(void *pv) {
-        xGL *gl = (xGL*)pv;
+        XGL *gl = (XGL*)pv;
         gl->runRenderLoop();
     }
 
@@ -46,7 +46,7 @@ private:
     void initHardwarePanel();
 
 public:
-    LVGLRenderer(uint32_t width = SCREEN_WIDTH, uint32_t height = SCREEN_HEIGHT) :
+    XGL(uint32_t width = SCREEN_WIDTH, uint32_t height = SCREEN_HEIGHT) :
         _width(width),
         _height(height),
         _in_q(NULL),
@@ -55,10 +55,10 @@ public:
         _panel(NULL),
         _display(NULL),
         _ts(NULL),
-        _canvas_obj(NULL),
-        _canvas_buffer(NULL) {}
+        _term_log(NULL),
+        _canvas_buf(NULL) {}
 
-    bool begin(xQueGL *in_q, UBaseType_t task_priority);
+    bool begin(xQueGL *in_q, int priority);
 };
 
 #else // !(ARDUINO || ESP32)
@@ -97,10 +97,12 @@ public:
         if (_thread) { delete _thread; }
     }
 
-    void begin(xQueGL *vec_q, UBaseType_t task_priority) {
+    bool begin(xQueGL *vec_q, int priority) {
         _vec_q = vec_q;
         _thread = new std::thread(&SimulatedLVGL::runRenderLoop, this);
         _thread->detach();
+
+        return true;
     }
 };
 
