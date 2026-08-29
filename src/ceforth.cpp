@@ -66,10 +66,6 @@ U8  *MEM0;                         ///< base of parameter memory block
 ///
 ///@name Dictionary and data stack access macros
 ///@{
-#define TOS       (vm.tos)                 /**< Top of stack                            */
-#define SS        (vm.ss)                  /**< parameter stack (per task)              */
-#define IP        (vm.ip)                  /**< instruction pointer (per task)          */
-#define RS        (vm.rs)                  /**< return stack (per task)                 */
 #define BOOL(f)   ((f)?-1:0)               /**< Forth boolean representation            */
 #define HERE      (pmem.idx)               /**< current parameter memory index          */
 #define MEM(a)    (MEM0 + (IU)UINT(a))     /**< pointer to address fetched from pmem    */
@@ -148,10 +144,6 @@ void add_var(IU op, DU v=DU0) {     ///< add a varirable header
 ///
 ///> functions to reduce verbosity
 ///
-#define PUSH(v) (SS.push(TOS), TOS = v)
-#define POP()   ({ DU n=TOS; TOS=SS.pop(); n; })
-#define POPI()  (UINT(POP()))
-
 int def_word(const char* name) {    ///< display if redefined
     if (name[0]=='\0') {            /// * missing name?
         pstr(" name?", CR); return 0;
@@ -286,7 +278,7 @@ void nest(VM& vm) {
 ///> CALL - inner-interpreter proxy (inline macro does not run faster)
 ///
 constexpr Code g_rom[] = {                 ///< ROM
-    CODE("nul ",    {}),                   /// dict[0], not used, simplify find()
+    CODE("nul ",    {}),                   /// dict[0] dummy, simplify find()
     ///
     /// @defgroup Stack ops
     /// @brief - opcode sequence can be changed below this line
