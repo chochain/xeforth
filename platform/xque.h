@@ -3,8 +3,8 @@
 #include "xbridge.h"
 
 #if (ARDUINO || ESP32)
-typedef void *xQueWeb;        // void *QueueHandle_t
-typedef void *xQueGL;
+typedef void xQueWeb;        // void *QueueHandle_t
+typedef void xQueGL;
 
 #else // !(ARDUINO || ESP32)
 #include <queue>
