@@ -17,10 +17,14 @@ const char *APP_VERSION = "xeForth v1.0";
 ///
 ///> interface to core module
 ///
+#include "xforth.h"              ///< Forth VM interface
+#include "xserver.h"             ///< ESP32 Async Web Server
+#include "xgl.h"                 ///< UI, LVGL+Touch interface
 #include "../src/ceforth.h"
+
 extern void forth_init();
 extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
-extern FV<Code*> dict;
+extern List<Code*, E4_DICT_SZ> dict;
 ///====================================================================
 ///
 ///> Memory statistics - for heap, stack, external memory debugging
@@ -75,7 +79,7 @@ void forth_include(const char *fname) {
 #define PEEK(a)      (U32)(*(U32*)((UFP)(a)))
 #define POKE(a, c)   (*(U32*)((UFP)(a))=(U32)(c))
 
-const Code ops[] = {
+constexpr Code ops[] = {
     CODE("pinmode",IU p = POPI(); pinMode(p, POPI())),          // n p --
     CODE("in",     IU p = POPI(); PUSH(digitalRead(p))),        // p -- n
     CODE("out",    IU p = POPI(); digitalWrite(p, POPI())),     // n p --
