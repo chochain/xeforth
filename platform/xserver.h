@@ -9,13 +9,14 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
+#include "xque.h"
 
 class XServer {
 private:
     uint16_t       _port;
-    const char*    _ssid;
-    const char*    _password;
-    xQueWeb        _out_g;
+    const char     *_ssid;
+    const char     *_password;
+    xQueWeb        *_out_q;
     TaskHandle_t   _task;
     AsyncWebServer _server;          // Direct compilation inclusion
 
@@ -39,7 +40,7 @@ public:
         _server(port) {}
 
     // Establishes WiFi parameters and spins up the FreeRTOS background worker
-    bool begin(xQueWeb web_q, UBaseType_t task_priority);
+    bool begin(xQueWeb *web_q, int priority);
 };
 
-#endif // !_XSERVER_H
+#endif // _XSERVER_H
