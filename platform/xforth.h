@@ -3,7 +3,6 @@
 
 #if (ARDUINO || ESP32)
 #include <Arduino.h>
-#include "xbridge.h"
 #include "xque.h"
 
 extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
@@ -32,12 +31,12 @@ private:
 public:
     XForth(uint32_t id, uint32_t heartbeat_ms) : 
         _core_id(id), 
-        _ticks(pdMS_TO_TICKS(heartbeat_ms)), 
+        _tick(pdMS_TO_TICKS(heartbeat_ms)), 
         _in_q(NULL), 
         _task(NULL) {}
 
     // Initializes internal configurations and spins up the FreeRTOS worker thread
-    bool begin(xQueWeb *in_q, xQueGL *out_q, UBaseType_t task_priority);
+    bool begin(xQueWeb *in_q, xQueGL *out_q, int priority);
 };
 
 #else // !(ARDUINO || ESP32)
@@ -97,12 +96,14 @@ public:
         if (_thread) { delete _thread; }
     }
 
-    void begin(xQueWeb *in_q, xQueGL *out_q, UBaseType_t task_priority) {
+    bool begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
         _in_q  = in_q;
         _out_q = out_q;
         /* Spin up thread execution path using standard object context injection */
         _thread = new std::thread(&SimulatedForth::runInterpreterLoop, this);
         _thread->detach(); /* Run detached in background */
+
+        return true;
     }
 };
 

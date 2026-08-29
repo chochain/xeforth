@@ -1,6 +1,6 @@
 #include "xforth.h"
 
-bool XForth::begin(QueueHandle_t in_q, QueueHandle_t out_q, UBaseType_t task_priority) {
+bool XForth::begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
     if (in_q == NULL) return false;
     _in_q  = in_q;
     _out_q = out_q;
@@ -12,8 +12,8 @@ bool XForth::begin(QueueHandle_t in_q, QueueHandle_t out_q, UBaseType_t task_pri
         "Forth_Core_Task",     // Task string identifier name
         8192,                  // Task stack depth allocation (bytes)
         (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE
-        task_priority,         // Priority assignment configuration
-        &_task_handle,         // Target task handle tracker
+        priority,              // Priority assignment configuration
+        &_task,                // Target task handle tracker
         0                      // Pin strictly to Core 0 (leaving Core 1 free for LVGL)
     );
     return (xReturned == pdPASS);
