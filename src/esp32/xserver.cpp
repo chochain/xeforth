@@ -130,14 +130,14 @@ void XServer::runServerLoop() {
     // Using a C++ lambda expression that captures the 'this' instance context pointer cleanly via [this]
     _server.on("/execute", HTTP_POST, [this](AsyncWebServerRequest *req){
         if (req->hasParam("forth_code", true)) {
-            AsyncWebParameter* p = req->getParam("forth_code", true);
+            const AsyncWebParameter* p = req->getParam("forth_code", true);
             
             que_msg_t msg;
             strncpy(msg.buf, p->value().c_str(), QUE_BUF_SZ - 1);
             msg.buf[QUE_BUF_SZ - 1] = '\0';
 
             // Non-blocking payload push straight across threads using our member queue
-            if (xQueueSend(this->_out_q, &msg, 0) == pdTRUE) {
+            if (xQueueSend((QueueHandle_t)_out_q, &msg, 0) == pdTRUE) {
                 req->send(200, "text/plain", "Queued.");
             } else {
                 req->send(500, "text/plain", "Queue Buffer Full Error");
