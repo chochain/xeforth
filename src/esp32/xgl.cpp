@@ -88,7 +88,7 @@ void XGL::runRenderLoop() {
 
     while (1) {
         // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
-        while (xQueueReceive(_vec_q, &vec, 0) == pdTRUE) {
+        while (xQueueReceive((QueueHandle_t)_vec_q, &vec, 0) == pdTRUE) {
             
             switch (vec.op_code) {
                 case VECTOR_LINE: {
@@ -101,7 +101,7 @@ void XGL::runRenderLoop() {
                     lv_canvas_draw_line(_canvas_obj, pts, 2, &_line_dsc);
 #endif                    
                     // Direct vector drawing call into our isolated canvas object
-                    lv_textarea_add_text(_term_log, "hit here"));
+                    lv_textarea_add_text(_term_log, "hit here");
     
                     // Auto-scroll logic: lock view frame to bottom lines
                     uint32_t txt_len = strlen(lv_textarea_get_text(_term_log));
@@ -154,20 +154,14 @@ void XGL::initHardwarePanel() {
     // 4. Initialize Core LVGL framework engine configurations
     lv_init();
 
-    static uint32_t buffer_pixel_size = SCREEN_WIDTH * 40;
-    disp_draw_buf = (lv_color_t *)ps_malloc(buffer_pixel_size * sizeof(lv_color_t));
-    if (disp_draw_buf == NULL) while(1);
-    
-    lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, buffer_pixel_size);
-
     // Allocate frame buffers for LVGL's internal rendering engine (Separate from your Forth Canvas)
     // Allocating in Internal SRAM keeps rendering speeds high, or use PSRAM if memory is tight
     // Allocate a high-speed 40-line rendering slice block inside internal PSRAM memory
-    static lv_disp_draw_buf_t draw_buf;
-    static uint32_t           buf_sz = _width * 40;       // 40-row strip buffer
-    lv_color_t *buf1 = (lv_color_t *)ps_malloc(buf_sz * sizeof(lv_color_t));
+    uint32_t           buf_sz = _width * 40;       // 40-row strip buffer
+    lv_color_t         *buf1  = (lv_color_t *)ps_malloc(buf_sz * sizeof(lv_color_t));
     if (buf1==NULL) while(1);
     
+    lv_disp_draw_buf_t draw_buf;
     lv_disp_draw_buf_init(&draw_buf, buf1, NULL, buf_sz);
 
     // Register display driver variables to hook LVGL straight to Arduino_GFX
