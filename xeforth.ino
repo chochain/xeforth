@@ -25,7 +25,7 @@
 ///
 ///> ESP32 WiFi setup
 ///
-#include "platform/mcu.h"                 ///< MCU specific Forth words
+#include "src/esp32/mcu.h"                ///< MCU specific Forth words
 
 const char *WIFI_SSID = "Amitofo_4F_5G";  ///< use your own SSID
 const char *WIFI_PASS = "25325754";       ///< and the password
