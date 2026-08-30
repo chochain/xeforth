@@ -20,7 +20,7 @@ const char *APP_VERSION = "xeForth v1.0";
 #include "xforth.h"              ///< Forth VM interface
 #include "xserver.h"             ///< ESP32 Async Web Server
 #include "xgl.h"                 ///< UI, LVGL+Touch interface
-#include "../src/ceforth.h"
+#include "../ceforth.h"          ///< Forth VM itself
 
 extern void forth_init();
 extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
