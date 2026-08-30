@@ -77,9 +77,9 @@ int main0(int ac, char* av[]) {
     return 0;
 }
 ///====================================================================
-#include "xque.h"
-#include "xforth.h"
-#include "xgl.h"
+#include "esp32/xque.h"
+#include "esp32/xforth.h"
+#include "esp32/xgl.h"
 #include <iostream>
 
 int main(int argc, char *argv[]) {
