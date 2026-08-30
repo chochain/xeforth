@@ -9,8 +9,8 @@ extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
 
 class XForth {
 private:
-    uint32_t     _core_id;
-    TaskHandle_t _task;
+    uint32_t     _core;                   /// core id
+    TaskHandle_t _task;                   /// task id
     uint32_t     _tick;                   /// heartbeat_delay_ms
     xQueWeb      *_in_q;
     xQueGL       *_out_q;
@@ -30,7 +30,7 @@ private:
 
 public:
     XForth(uint32_t id, uint32_t heartbeat_ms) : 
-        _core_id(id), 
+        _core(id), 
         _tick(pdMS_TO_TICKS(heartbeat_ms)), 
         _in_q(NULL), 
         _task(NULL) {}
