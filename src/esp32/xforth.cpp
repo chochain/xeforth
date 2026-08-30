@@ -20,20 +20,20 @@ bool XForth::begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
 }
 
 void XForth::runInterpreterLoop() {
-    Serial.printf("[ForthProcessor Class ID %u]: Background thread online on Core 0.\n", _processor_id);
+    Serial.printf("core%d xforth> Background thread online.\n", _core);
 
-    web_msg_t rx_msg;
+    que_msg_t rx_msg;
     while (1) {
         // Wait indefinitely (portMAX_DELAY) using 0% CPU cycles until a packet hits the queue
-        if (xQueueReceive(_in_q, &rx_msg, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive((QueueHandle_t)_in_q, &rx_msg, portMAX_DELAY) == pdTRUE) {
             
-            Serial.printf("\n[Forth Class Interface]: Evaluating incoming string array -> %s\n", rx_msg.cmd);
+            Serial.printf("\core%d xforth> Evaluating incoming string array -> %s\n", _core, rx_msg.buf);
             
             // Execute non-fragmenting multi-token text processing
-            parseAndExecuteTokens(rx_msg.cmd);
+            parseAndExecuteTokens(rx_msg.buf);
         }
         // Brief safety heartbeat yield hook
-        vTaskDelay(_ticks);
+        vTaskDelay(_tick);
     }
 }
 
@@ -48,7 +48,7 @@ void XForth::parseAndExecuteTokens(char* cmd) {
     while (idiom != NULL) {
         // Pass individual parsed tokens directly to your low-level C engine
         // by referencing their raw memory string pointers
-        forth_vm(idiom, _out_q);
+        forth_vm(idiom, NULL); //_out_q);
         
         // Seek out the next individual space-separated command segment
         idiom = strtok_r(NULL, " ", &save_ptr);
