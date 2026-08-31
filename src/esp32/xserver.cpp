@@ -11,8 +11,9 @@ Transfer-Encoding: chunked
 
 )XX";
 
+#if 0
 // Embed the responsive HTML interface cleanly inside the flash layout space
-const char index_html[] PROGMEM = R"XX(
+const char HTML_INDEX[] PROGMEM = R"XX(
 <!DOCTYPE html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Forth Console</title>
@@ -22,7 +23,7 @@ const char index_html[] PROGMEM = R"XX(
   button   { background:#00ff00; color:#000; border:none; padding:12px; font-weight:bold; cursor:pointer; margin-top:10px; width:100%; font-size:16px; }
 </style></head>
 <body>
-  <h2>📟 FORTH PIPELINE</h2>
+  <h2>FORTH PIPELINE</h2>
   <textarea id="code" placeholder="Enter commands..."></textarea>
   <button onclick="send()">EXECUTE</button>
   <script>
@@ -36,27 +37,23 @@ const char index_html[] PROGMEM = R"XX(
   </script>
 </body></html>
 )XX";
+#endif
 
-#if 0
 // Embed the HTML code cleanly as a static string block
-const char index_html[] PROGMEM = R"XX(
-<!-- Paste the index.html code layout content here -->
-)XX";
-
 const char *HTML_INDEX PROGMEM = R"XX(
 HTTP/1.1 200 OK
 Content-type:text/html
 
 <html>
 <head>
-  <meta charset='UTF-8'><title>eForth on ESP32</title>
+  <meta charset='UTF-8'><title>xeForth on ESP32</title>
   <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
   <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
   <style>body{font-family:'Courier New',monospace;font-size:14px;}</style>
 </head>
 <body>
     <div id='log' style='float:left;overflow:auto;height:100%;width:60%;
-         background-color:#f8f0f0;'>eForth 5.0</div>
+         background-color:#f8f0f0;'>xeForth 1.0</div>
     <textarea id='tib' style='height:100%;width:40%;resize:none'
         onkeydown='if (13===event.keyCode) forth()'></textarea>
 </body>
@@ -68,12 +65,16 @@ function send_post(url, ary) {
     let id  = '_'+(idx++).toString()
     let cmd = '\n---CMD'+id+'\n'
     let req = ary.slice(0,30).join('\n')
+    let frm = new FormData()
+    frm.append('forth_code', req)
     log.innerHTML += '<div id='+id+'><font color=blue>'+
                      req.replace(/\n/g,'<br/>')+'</font><br/></div>'
     fetch(url, {
         method: 'POST', headers: { 'Context-Type': 'text/plain' },
-        body: cmd+req+cmd
-     }).then(rsp=>rsp.text()).then(txt=>{
+        body: frm
+    })
+    .then(rsp=>rsp.text())
+    .then(txt=>{
         document.getElementById(id).innerHTML +=
             txt.replace(/\n/g,'<br/>').replace(/\s/g,'&nbsp;')
         log.scrollTop=log.scrollHeight
@@ -83,14 +84,13 @@ function send_post(url, ary) {
 }
 function forth() {
     let ary = tib.value.split('\n')
-    send_post('/input', ary)
+    if (ary.length > 0) send_post('/execute', ary)
     tib.value = ''; tib.focus(); return false
 }
 window.onload = ()=>forth()
 </script></html>
 
 )XX";
-#endif 
 
 bool XServer::begin(xQueWeb *web_q, int priority) {
     if (web_q == NULL) return false;
@@ -125,7 +125,7 @@ void XServer::runServerLoop() {
 
     // Route A: Serve the UI Dashboard Home Page
     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req){
-        req->send_P(200, "text/html", index_html);
+        req->send_P(200, "text/html", HTML_INDEX);
     });
 
     // Route B: Handle Incoming Async Data Submissions
@@ -141,10 +141,12 @@ void XServer::runServerLoop() {
             // Non-blocking payload push straight across threads using our member queue
             if (xQueueSend((QueueHandle_t)_out_q, &msg, 0) == pdTRUE) {
                 req->send(200, "text/plain", "Queued.");
-            } else {
+            }
+            else {
                 req->send(500, "text/plain", "Queue Buffer Full Error");
             }
-        } else {
+        }
+        else {
             req->send(400, "text/plain", "Bad Parameters");
         }
     });
