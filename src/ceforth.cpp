@@ -307,6 +307,20 @@ void nest(VM& vm) {
 ///
 constexpr Code g_rom[] = {                 ///< ROM
     CODE("nul ",    {}),                   /// dict[0] dummy, simplify find()
+#if 0 /* tail-call */    
+    /* 
+     * 'tos' refers to the incoming local double variable parameter.
+     * 'sp' refers to the pointer tracking your data stack index.
+     * Use standard array bracket syntax to mutate the data pool:
+     */
+    CODE("dup",     vm.ss.v[++(*sp)] = tos),
+    CODE("drop",    tos = vm.ss.v[(*sp)--]),
+    
+    /* Standard ALU calculations run at maximum register speed */
+    CODE("+",       tos += vm.ss.v[(*sp)--]),
+    CODE("-",       tos =  vm.ss.v[(*sp)--] - tos),
+    CODE("invert",  tos = ~UINT(tos)),
+#endif
     ///
     /// @defgroup Stack ops
     /// @brief - opcode sequence can be changed below this line
