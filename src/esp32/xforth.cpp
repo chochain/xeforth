@@ -12,7 +12,7 @@ bool XForth::begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
         "Forth_Core_Task",     // Task string identifier name
         8192,                  // Task stack depth allocation (bytes)
         (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE
-        priority,              // Priority assignment configuration
+        (BaseType_t)priority,  // Priority assignment configuration
         &_task,                // Target task handle tracker
         0                      // Pin strictly to Core 0 (leaving Core 1 free for LVGL)
     );
@@ -27,7 +27,7 @@ void XForth::runInterpreterLoop() {
         // Wait indefinitely (portMAX_DELAY) using 0% CPU cycles until a packet hits the queue
         if (xQueueReceive((QueueHandle_t)_in_q, &rx_msg, portMAX_DELAY) == pdTRUE) {
             
-            Serial.printf("\core%d xforth> Evaluating incoming string array -> %s\n", _core, rx_msg.buf);
+            Serial.printf("\core%d xforth> incoming cmd -> %s\n", _core, rx_msg.buf);
             
             // Execute non-fragmenting multi-token text processing
             parseAndExecuteTokens(rx_msg.buf);
@@ -40,6 +40,8 @@ void XForth::runInterpreterLoop() {
 void XForth::parseAndExecuteTokens(char* cmd) {
     if (cmd == NULL || strlen(cmd) == 0) return;
 
+    auto echo = [](int i, const char *rst) { Serial.printf("%d> %s\n", i, rst); };
+
     // Extract the very first token word from the continuous text buffer
     // using the reentrant, thread-safe strtok_r function
     char* save_ptr;
@@ -48,7 +50,7 @@ void XForth::parseAndExecuteTokens(char* cmd) {
     while (idiom != NULL) {
         // Pass individual parsed tokens directly to your low-level C engine
         // by referencing their raw memory string pointers
-        forth_vm(idiom, NULL); //_out_q);
+        forth_vm(idiom, echo);
         
         // Seek out the next individual space-separated command segment
         idiom = strtok_r(NULL, " ", &save_ptr);
