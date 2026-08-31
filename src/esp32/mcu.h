@@ -30,20 +30,19 @@ extern List<Code*, E4_DICT_SZ> dict;
 ///> Memory statistics - for heap, stack, external memory debugging
 ///
 void mem_stat()  {
-    size_t  t = heap_caps_get_total_size(MALLOC_CAP_8BIT);
-    size_t  f = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    int64_t p = 1000L * f / t;
-    LOGS(APP_VERSION);
-    LOGS(" on core[");           LOG(xPortGetCoreID());
-    LOGS("] at ");               LOG(getCpuFrequencyMhz());      
-    LOGS(" MHz, RAM ");          LOG(static_cast<float>(p) * 0.1);
-    LOGS("% free (");            LOG(f>>10);
-    LOGS(" / ");                 LOG(t>>10); LOGS(" KB)\n");
-    LOG_KV("  pinMode INPUT|OUTPUT|PULLUP|PULLDOWN=", INPUT);
-    LOG_KV("|", OUTPUT);         LOG_KV("|", INPUT_PULLUP);
-    LOG_KV("|", INPUT_PULLDOWN);
-    LOG_KV(", digitalWrite HIGH|LOW=", HIGH);
-    LOG_KV("|", LOW);            LOGS("\n");
+    size_t  rf = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t  rt = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+    int64_t rp = 1000L * rf / rt;
+    size_t  sf = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t  st = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    int64_t sp = 1000L * sf / st;
+    
+    LOGS("\nSRAM ");  LOG(static_cast<float>(rp) * 0.1);
+    LOGS("% free ("); LOG(rf>>10);
+    LOGS(" / ");      LOG(rt>>10); LOGS(" KB)");
+    LOGS(", PSRAM "); LOG(static_cast<float>(sp) * 0.1);
+    LOGS("% free ("); LOG(sf>>10);
+    LOGS(" / ");      LOG(st>>10); LOGS(" KB)\n");
 }
 ///====================================================================
 ///
@@ -80,6 +79,7 @@ void forth_include(const char *fname) {
 #define POKE(a, c)   (*(U32*)((UFP)(a))=(U32)(c))
 
 constexpr Code ops[] = {
+    CODE("mstat",  mem_stat()),
     CODE("pinmode",IU p = POPI(); pinMode(p, POPI())),          // n p --
     CODE("in",     IU p = POPI(); PUSH(digitalRead(p))),        // p -- n
     CODE("out",    IU p = POPI(); digitalWrite(p, POPI())),     // n p --
@@ -90,6 +90,16 @@ constexpr Code ops[] = {
 };
 
 void mcu_init() {
+    LOGS("\n");                  LOGS(APP_VERSION);
+    LOGS(" on core[");           LOG(xPortGetCoreID());
+    LOGS("] at ");               LOG(getCpuFrequencyMhz());      
+    LOGS(" MHz\n");
+    LOG_KV("pinMode INPUT|OUTPUT|PULLUP|PULLDOWN=", INPUT);
+    LOG_KV("|", OUTPUT);         LOG_KV("|", INPUT_PULLUP);
+    LOG_KV("|", INPUT_PULLDOWN);
+    LOG_KV(", digitalWrite HIGH|LOW=", HIGH);
+    LOG_KV("|", LOW);            LOGS("\n");
+    
     forth_init();
     
     const int sz = (int)(sizeof(ops))/(sizeof(Code));
