@@ -103,7 +103,7 @@ bool XServer::begin(xQueWeb *web_q, int priority) {
         "Web_Async_Task",      // Task string identifier name
         4096,                  // Task stack depth allocation (bytes)
         (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE
-        priority,              // Priority assignment configuration
+        (BaseType_t)priority,  // Priority assignment configuration
         &_task,                // Target task handle tracker
         0                      // Pin strictly to Core 0 (leaving Core 1 free for LVGL)
     );
@@ -112,13 +112,15 @@ bool XServer::begin(xQueWeb *web_q, int priority) {
 
 void XServer::runServerLoop() {
     WiFi.mode(WIFI_STA);
+    Serial.printf("ssid=%s, pw=%s\n", _ssid, _password);
     WiFi.begin(_ssid, _password);
     
     while (WiFi.status() != WL_CONNECTED) {
-        vTaskDelay(pdMS_TO_TICKS(500)); 
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        Serial.print(".");
     }
     
-    Serial.printf("\n[XServer Class]: Dashboard live at http://%s\n", 
+    Serial.printf("\ncore0 xsvr> live at http://%s\n", 
                   WiFi.localIP().toString().c_str());
 
     // Route A: Serve the UI Dashboard Home Page
@@ -133,8 +135,8 @@ void XServer::runServerLoop() {
             const AsyncWebParameter* p = req->getParam("forth_code", true);
             
             que_msg_t msg;
-            strncpy(msg.buf, p->value().c_str(), QUE_BUF_SZ - 1);
-            msg.buf[QUE_BUF_SZ - 1] = '\0';
+            strncpy(msg.buf, p->value().c_str(), QUE_BUF_SZ - 1);  /// leave last byte to
+            msg.buf[QUE_BUF_SZ - 1] = '\0';                        /// ensure \0 terminated
 
             // Non-blocking payload push straight across threads using our member queue
             if (xQueueSend((QueueHandle_t)_out_q, &msg, 0) == pdTRUE) {
