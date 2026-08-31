@@ -212,6 +212,34 @@ void CALL(VM& vm, IU w) {
 #define OTHER(g)     default : { g; } break
 #define UNNEST()     (IP=UINT(RS.pop()))
 
+#if 0
+void nest(VM& vm) /* tail call */ {
+    vm.state = NEST;
+
+    /* 1. Extract core virtual machine tracking metrics locally onto the local stack frame */
+    IU  *ip = (IU*)MEM(vm.ip);       /* Local Instruction Pointer map */
+    int *sp = &vm.ss.idx;            /* Local Data Stack index map */
+    DU  tos = vm.tos;                /* Local cached Top-of-Stack register map */
+
+    /* 2. Read the initial function execution token from the current array offset */
+    FPTR next = *(FPTR*)(*ip++);
+
+    /* 
+     * 3. THE TAIL-CALL TRAMPOLINE DRIVER ENGINE:
+     * While next points to a valid function address, invoke it.
+     * The compiler flattens this assignment sequence into an optimized 
+     * 'jx' or 'jmp' assembly branch instruction under C++17 rules.
+     */
+    while (next != NULL) {
+        next = (FPTR)next(vm, ip, sp, tos);
+    }
+
+    /* 4. Flush the final stable register configurations back into the persistent VM memory block */
+    vm.ip  = (IU)((U8*)ip - MEM0);
+    vm.tos = tos;
+}
+#endif 
+
 void nest(VM& vm) {
     vm.state = NEST;                                 /// * activate VM
     while (IP) {
