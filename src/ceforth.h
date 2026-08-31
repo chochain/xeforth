@@ -215,6 +215,15 @@ constexpr Code rom_code(const char *name, FPTR fp, U8 im) {
 }
 #define CODE(n, g) rom_code(n, [](VM& vm){ g; }, (U8)0)
 #define IMMD(n, g) rom_code(n, [](VM& vm){ g; }, (U8)IMM_ATTR)
+
+#if 0 // tail-call
+typedef void (*FPTR)(VM&, IU* &ip, int* &sp, DU &tos);          ///< function pointer
+#define NEXT()  (void*)(*(FPTR*)(*ip++))
+#define CODE(n, g) rom_code(n, [](VM& vm, IU* &ip, int* &sp, DU &tos) \
+                            -> void* { g; return NEXT(); }, (U8)0)
+#define IMMD(n, g) rom_code(n, [](VM& vm, IU* &ip, int* &sp, DU &tos) \
+                            -> void* { g; return NEXT(); }, (U8)IMM_ATTR)
+#endif
 ///@}
 ///@name Multitasking support
 ///@{
