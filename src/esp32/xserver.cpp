@@ -2,6 +2,7 @@
 /// @file
 /// @brief Async Web Server class implementation
 ///
+#include <algorithm>           // std::min
 #include "xserver.h"
 
 const char *HTML_CHUNKED PROGMEM = R"XX(
@@ -110,6 +111,42 @@ bool XServer::begin(xQueWeb *web_q, int priority) {
     return (xReturned == pdPASS);
 }
 
+BaseType_t XServer::parse(std::string_view view, std::string_view delim) {
+    size_t    start = 0;
+    que_msg_t msg;
+
+    while (start < view.size()) {
+        // 1. Skip leading delimiters
+        start = view.find_first_not_of(delim, start);
+        if (start == std::string_view::npos) break; // Reached the end
+
+        // 2. Find the end of the current token
+        size_t end = view.find_first_of(delim, start);
+
+        // 3. Slice out the token view (non-destructively)
+        std::string_view token = (end == std::string_view::npos) 
+            ? view.substr(start) 
+            : view.substr(start, end - start);
+
+        if (!token.empty()) {
+            size_t sz = std::min(token.size(), (size_t)(QUE_BUF_SZ - 1));
+            memcpy(msg.buf, token.data(), sz);        /// leave last byte to
+            msg.buf[sz] = '\0';                       /// ensure \0 terminated
+
+            BaseType_t rst = xQueueSend((QueueHandle_t)_out_q, &msg, 0);
+            if (rst != pdTRUE) return rst;
+            // 4. Do your work with the token
+            // You can print it directly because C++ streams understand string_view length!
+            Serial.println(token.data()); // Or use Serial.printf("%.*s\n", (int)token.size(), token.data());
+        }
+
+        // Move past the current token
+        if (end == std::string_view::npos) break;
+        start = end + 1;
+    }
+    return pdTRUE;
+}
+
 void XServer::runServerLoop() {
     WiFi.mode(WIFI_STA);
     Serial.printf("ssid=%s, pw=%s\n", _ssid, _password);
@@ -131,23 +168,20 @@ void XServer::runServerLoop() {
     // Route B: Handle Incoming Async Data Submissions
     // Using a C++ lambda expression that captures the 'this' instance context pointer cleanly via [this]
     _server.on("/execute", HTTP_POST, [this](AsyncWebServerRequest *req){
-        if (req->hasParam("forth_code", true)) {
-            const AsyncWebParameter* p = req->getParam("forth_code", true);
-            
-            que_msg_t msg;
-            strncpy(msg.buf, p->value().c_str(), QUE_BUF_SZ - 1);  /// leave last byte to
-            msg.buf[QUE_BUF_SZ - 1] = '\0';                        /// ensure \0 terminated
+        if (!req->hasParam("forth_code", true)) {
+            req->send(400, "text/plain", "Bad Parameters");
+            return;
+        }
+        const AsyncWebParameter* p = req->getParam("forth_code", true);
 
-            // Non-blocking payload push straight across threads using our member queue
-            if (xQueueSend((QueueHandle_t)_out_q, &msg, 0) == pdTRUE) {
-                req->send(200, "text/plain", "Queued.");
-            }
-            else {
-                req->send(500, "text/plain", "Queue Buffer Full Error");
-            }
+        String str = p->value();
+
+        std::string_view view(str.c_str(), str.length());
+        if (parse(view, "\n") == pdTRUE) {
+            req->send(200, "text/plain", "Queued.");
         }
         else {
-            req->send(400, "text/plain", "Bad Parameters");
+            req->send(500, "text/plain", "Queue Buffer Full Error");
         }
     });
 
