@@ -6,6 +6,7 @@
 #ifndef _XSERVER_H
 #define _XSERVER_H
 
+#include <string_view>
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
@@ -27,8 +28,9 @@ private:
         svr->runServerLoop();
     }
 
-    // This internal worker function handles the actual execution logic
-    void runServerLoop();
+    // internal worker functions handles the actual execution logic
+    BaseType_t parse(std::string_view view, std::string_view delim = "\n");
+    void       runServerLoop();
 
 public:
     XServer(const char* ssid, const char* password, uint16_t port = 80) :
