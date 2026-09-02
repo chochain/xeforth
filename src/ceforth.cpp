@@ -306,7 +306,7 @@ void nest(VM& vm) {
 ///> CALL - inner-interpreter proxy (inline macro does not run faster)
 ///
 constexpr Code g_rom[] = {                 ///< ROM
-    CODE("nul ",    {}),                   /// dict[0] dummy, simplify find()
+    CODE("nul ",    PUSH(TOS); POP()),     /// dict[0] dummy, simplify find()
 #if 0 /* tail-call */    
     /* 
      * 'tos' refers to the incoming local double variable parameter.
@@ -376,8 +376,6 @@ constexpr Code g_rom[] = {                 ///< ROM
 #if USE_FLOAT
     CODE("fmod",    TOS = MOD(SS.pop(), TOS)),                /// -3.5 2 fmod => -1.5
     CODE("f>s",     TOS = INT(TOS)),                          /// 1.9 => 1, -1.9 => -1
-#else
-    CODE("f>s",     /* do nothing */),
 #endif // USE_FLOAT
     /// @}
     /// @defgroup Logic ops
@@ -618,6 +616,7 @@ void dict_validate() {
                    i, g->pfa, c->pfa, g->attr, c->attr);
         }
     }
+    dict_dump(10);
     /// check xtoff range
     max -= Code::XT0;
     if (max & EXT_FLAG) {                     /// range check
@@ -685,7 +684,7 @@ void forth_core(VM& vm, const char *idiom) {     ///> aka QUERY
 /// Forth VM external command processor
 ///
 void forth_init() {
-    static bool init    = false;
+    static bool init = false;
     if (init) return;                    ///> check dictionary initilized
 
     if (!dict.v || !pmem.v) {
