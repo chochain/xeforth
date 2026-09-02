@@ -32,6 +32,7 @@ private:
 
     // LVGL internal canvas properties
     lv_obj_t              *_term_log;
+    lv_obj_t              *_canvas_obj;
     uint8_t               *_canvas_buf;
     lv_draw_line_dsc_t    _line_dsc;
 
@@ -58,7 +59,8 @@ public:
         _term_log(NULL),
         _canvas_buf(NULL) {}
 
-    bool begin(xQueGL *vec_q, int priority);
+//    bool begin(xQueGL *vec_q, int priority);
+    bool begin(xQueWeb *vec_q, int priority);
 };
 
 #else // !(ARDUINO || ESP32)

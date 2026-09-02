@@ -20,7 +20,8 @@ void my_disp_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t
     lv_disp_flush_ready(disp_drv);
 }
 
-bool XGL::begin(xQueGL *vec_q, int priority) {
+//bool XGL::begin(xQueGL *vec_q, int priority) {
+bool XGL::begin(xQueWeb *vec_q, int priority) {
     if (vec_q == NULL) return false;
     _vec_q = vec_q;
 
@@ -42,7 +43,6 @@ void XGL::runRenderLoop() {
     // 1. Fire up your working v8.4 physical panel display driver code
     initHardwarePanel();
 
-#if 0    
     // 2. Allocate the 480x480 true-color frame buffer strictly in External PSRAM
     // 480 * 480 * 2 bytes per pixel (RGB565) = 460.8 KB
     size_t buf_sz = _width * _height * sizeof(lv_color_t);
@@ -62,7 +62,6 @@ void XGL::runRenderLoop() {
     lv_draw_line_dsc_init(&_line_dsc);
     _line_dsc.color = lv_color_make(0, 255, 0); // Neo-Green Logo theme color
     _line_dsc.width = 2;                        // 2-pixel stroke thickness
-#endif
 
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_make(10, 12, 16), 0);
     
@@ -84,22 +83,25 @@ void XGL::runRenderLoop() {
     
     Serial.println("core1 XGL> Arduino_GFX drivers active.");
     
-    draw_vec_t vec;
+//    draw_vec_t vec;
+    que_msg_t  msg;
 
     while (1) {
         // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
-        while (xQueueReceive((QueueHandle_t)_vec_q, &vec, 0) == pdTRUE) {
+//        while (xQueueReceive((QueueHandle_t)_vec_q, &vec, 0) == pdTRUE) {
+        while (xQueueReceive((QueueHandle_t)_vec_q, &msg, portMAX_DELAY) == pdTRUE) {
+            Serial.printf("xgl >> %s\n", msg.buf);
             
+#if 0
             switch (vec.op_code) {
                 case VECTOR_LINE: {
-#if 0                    
                     // Map parameters straight to an LVGL v8.4 coordinate array structure
                     lv_point_t pts[2] = {
                         { vec.x1, vec.y1 },
                         { vec.x2, vec.y2 }
                     };
-                    lv_canvas_draw_line(_canvas_obj, pts, 2, &_line_dsc);
-#endif                    
+                    lv_canvas_draw_line(_term_log, pts, 2, &_line_dsc);
+
                     // Direct vector drawing call into our isolated canvas object
                     lv_textarea_add_text(_term_log, "hit here");
     
@@ -113,8 +115,8 @@ void XGL::runRenderLoop() {
                     lv_textarea_set_text(_term_log, "");
                     break;
             }
+#endif
         }
-
         // 6. Force LVGL to run layout ticks, handle touch states, and pump DMA pixels
         lv_timer_handler();
 
