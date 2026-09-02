@@ -1,6 +1,8 @@
 #include "xforth.h"
 
-bool XForth::begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
+xQueWeb *XForth::_out_q = NULL;
+//bool XForth::begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
+bool XForth::begin(xQueWeb *in_q, xQueWeb *out_q, int priority) {
     if (in_q == NULL) return false;
     _in_q  = in_q;
     _out_q = out_q;
@@ -36,11 +38,23 @@ void XForth::runInterpreterLoop() {
     }
 }
 
+void XForth::feedback(int len, const char *rst) {
+    static que_msg_t msg;
+    Serial.printf("%d> %s\n", len, rst);
+        
+    int sz = std::min(len, (QUE_BUF_SZ - 1));
+    memcpy(msg.buf, rst, sz);                 /// leave last byte to
+    msg.buf[sz] = '\0';                       /// ensure \0 terminated
+        
+    if (xQueueSend((QueueHandle_t)_out_q, &msg, 0) != pdTRUE) {
+        Serial.printf("xforth out_q failed on %s\n", rst);
+    }
+}
+
 void XForth::parseAndExecuteTokens(char* cmd) {
     if (cmd == NULL || strlen(cmd) == 0) return;
 
-    auto echo = [](int i, const char *rst) { Serial.printf("%d> %s\n", i, rst); };
-    forth_vm(cmd, echo);        // one-line per call
+    forth_vm(cmd, feedback);             /// one-line per call
     return;
 
     // Extract the very first token word from the continuous text buffer

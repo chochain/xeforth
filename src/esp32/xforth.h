@@ -9,11 +9,11 @@ extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
 
 class XForth {
 private:
+    static xQueWeb *_out_q;
     uint32_t     _core;                   /// core id
     TaskHandle_t _task;                   /// task id
     uint32_t     _tick;                   /// heartbeat_delay_ms
     xQueWeb      *_in_q;
-    xQueGL       *_out_q;
 
     // 🚨 FreeRTOS tasks inside classes MUST be declared as "static void"
     static void vTaskForthBridge(void *pv) {
@@ -21,6 +21,7 @@ private:
         XForth *vm = (XForth*)pv;
         vm->runInterpreterLoop();
     }
+    static void feedback(int i, const char *rst);
 
     // This internal worker function handles the actual execution logic
     void runInterpreterLoop();
@@ -36,7 +37,8 @@ public:
         _task(NULL) {}
 
     // Initializes internal configurations and spins up the FreeRTOS worker thread
-    bool begin(xQueWeb *in_q, xQueGL *out_q, int priority);
+//    bool begin(xQueWeb *in_q, xQueGL *out_q, int priority);
+    bool begin(xQueWeb *in_q, xQueWeb *out_q, int priority);
 };
 
 #else // !(ARDUINO || ESP32)
