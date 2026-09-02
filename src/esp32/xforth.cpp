@@ -26,8 +26,7 @@ void XForth::runInterpreterLoop() {
     while (1) {
         // Wait indefinitely (portMAX_DELAY) using 0% CPU cycles until a packet hits the queue
         if (xQueueReceive((QueueHandle_t)_in_q, &rx_msg, portMAX_DELAY) == pdTRUE) {
-            
-            Serial.printf("\core%d xforth> incoming cmd -> %s\n", _core, rx_msg.buf);
+            Serial.printf("core%d xforth> incoming cmd -> %s\n", _core, rx_msg.buf);
             
             // Execute non-fragmenting multi-token text processing
             parseAndExecuteTokens(rx_msg.buf);
@@ -41,6 +40,8 @@ void XForth::parseAndExecuteTokens(char* cmd) {
     if (cmd == NULL || strlen(cmd) == 0) return;
 
     auto echo = [](int i, const char *rst) { Serial.printf("%d> %s\n", i, rst); };
+    forth_vm(cmd, echo);        // one-line per call
+    return;
 
     // Extract the very first token word from the continuous text buffer
     // using the reentrant, thread-safe strtok_r function
@@ -50,7 +51,7 @@ void XForth::parseAndExecuteTokens(char* cmd) {
     while (idiom != NULL) {
         // Pass individual parsed tokens directly to your low-level C engine
         // by referencing their raw memory string pointers
-        forth_vm(idiom, echo);
+        Serial.printf("forth << %s\n", idiom);
         
         // Seek out the next individual space-separated command segment
         idiom = strtok_r(NULL, " ", &save_ptr);
