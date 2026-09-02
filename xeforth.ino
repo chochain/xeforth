@@ -27,14 +27,17 @@
 ///
 #include "src/esp32/mcu.h"                ///< MCU specific Forth words
 
-const char *WIFI_SSID = "Amitofo_4F_5G";  ///< use your own SSID
-const char *WIFI_PASS = "25325754";       ///< and the password
+//const char *WIFI_SSID = "Amitofo_4F_5G"; ///< use your own SSID
+//const char *WIFI_PASS = "25325754";      ///< and the password
+const char *WIFI_SSID = "iDafu";           ///< use your own SSID
+const char *WIFI_PASS = "AlseTron";       ///< and the password
 const int   WIFI_PORT = 80;               ///< and the password
 
 // Define structural payload contracts uniformly across your files
 // Instantiate Global Message-Routing Pipelines
 xQueWeb *webToForthQueue  = NULL;
-xQueGL  *forthToLvglQueue = NULL;
+//xQueGL  *forthToLvglQueue = NULL;
+xQueWeb  *forthToLvglQueue = NULL;
 
 // Instantiate the distinct, modular systems with custom parameters
 XServer myWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
@@ -46,7 +49,8 @@ void setup() {
 
     // 1. Build the non-fragmenting communications pipeline channels
     webToForthQueue  = (xQueWeb*)xQueueCreate(10, sizeof(que_msg_t));
-    forthToLvglQueue = (xQueGL* )xQueueCreate(50, sizeof(draw_vec_t));
+//    forthToLvglQueue = (xQueGL* )xQueueCreate(50, sizeof(draw_vec_t));
+    forthToLvglQueue = (xQueWeb* )xQueueCreate(50, sizeof(que_msg_t));
 
     if (webToForthQueue == NULL || forthToLvglQueue == NULL) {
         Serial.println("Critical: Failed to generate system pipelines.");
