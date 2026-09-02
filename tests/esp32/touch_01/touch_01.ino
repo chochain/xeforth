@@ -1,8 +1,8 @@
 /** -*- mode: c++ -*-
  * Guition 4848S040 v0.2 GT911 Touch Example
  * Required Libraries:
- *   - Arduino_GFX_Library
- *   - TAMC_GT911
+ *   - GFX Library for Arduino v1.5.0
+ *   - TAMC GT911 v1.0.2
  */
 #include <Arduino_GFX_Library.h>
 #include <TAMC_GT911.h>

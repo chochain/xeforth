@@ -1,9 +1,9 @@
 /** -*- mode: c++ -*-
  * Guition 4848S040 v0.2 GT911 Touch Example
  * Required Libraries:
- *   - Arduino_GFX_Library
- *   - TAMC_GT911
- *   - LVGL
+ *   - GFX Library for Arduino v1.5.0
+ *   - TAMC GT911 v1.0.2
+ *   - lvgl v8.4.0
  */
 #include <Arduino_GFX_Library.h>
 #include <TAMC_GT911.h>
@@ -165,7 +165,7 @@ void setup() {
     arc_label = lv_label_create(tab1);
     lv_label_set_text(arc_label, "65%");
     lv_obj_align(arc_label, LV_ALIGN_CENTER, 0, -20);
-    lv_obj_set_style_text_font(arc_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(arc_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(arc_label, lv_color_white(), 0);
 
     lv_obj_t *sub_label = lv_label_create(tab1);
