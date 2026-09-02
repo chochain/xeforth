@@ -234,17 +234,23 @@ void mem_dump(U32 p0, IU sz, int base) {
 ///> System statistics - for heap, stack, external memory debugging
 ///
 void dict_dump(int base) {
-    fout << setbase(16) << setfill('0') << "XT0=" << Code::XT0 << ENDL;
+//    fout << setbase(16) << setfill('0') << "XT0=" << Code::XT0 << ENDL;
+    printf("XT0=%08x\n", Code::XT0);
     for (int i=0; i<dict.idx; i++) {
         Code *c = dict[i];
+        printf("%03d> name=%8s, xt=%08x, attr=%x, xtoff=%04x %s\n",
+               i, (UFP)c->name, (UFP)c->xt, (c->attr & 0x3),
+               (c->is_udf() ? c->pfa : c->xtoff()), c->name);
+#if 0               
         fout << setfill('0') << setw(3) << setbase(10) << i << setbase(16)
              << "> name=" << setw(8) << (UFP)c->name
              << ", xt="   << setw(8) << (UFP)c->xt
              << ", attr=" << (c->attr & 0x3)
              << ", xtoff="<< setw(4) << (c->is_udf() ? c->pfa : c->xtoff())
              << " "       << c->name << ENDL;
+#endif        
     }
-    fout << setbase(base) << setfill(' ') << setw(-1);
+//    fout << setbase(base) << setfill(' ') << setw(-1);
 }
 ///====================================================================
 ///
