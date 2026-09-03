@@ -21,7 +21,7 @@ class XGL {
 private:
     uint32_t              _width;
     uint32_t              _height;
-    xQueGL                *_vec_q;
+    xQueGL                *_gl_q;
     TaskHandle_t          _task;
     
     // 📺 Embedded Arduino_GFX Hardware Display Infrastructure Components
@@ -31,10 +31,12 @@ private:
     TAMC_GT911            *_ts;
 
     // LVGL internal canvas properties
+    lv_disp_draw_buf_t    _draw_buf;
+    lv_color_t            *_disp_draw_buf;
     lv_obj_t              *_term_log;
-    lv_obj_t              *_canvas_obj;
-    uint8_t               *_canvas_buf;
-    lv_draw_line_dsc_t    _line_dsc;
+    lv_obj_t              *_chart;
+    lv_chart_series_t     *_cpu_series;
+    lv_chart_series_t     *_ram_series;
 
     static void vTaskRenderBridge(void *pv) {
         XGL *gl = (XGL*)pv;
@@ -45,22 +47,26 @@ private:
     
     // Internal hardware initialization method
     void initHardwarePanel();
+    void parse(char *cmd);
+    void print(const char *text, lv_color_t textColor);
 
 public:
     XGL(uint32_t width = SCREEN_WIDTH, uint32_t height = SCREEN_HEIGHT) :
         _width(width),
         _height(height),
-        _vec_q(NULL),
+        _gl_q(NULL),
         _task(NULL),
         _bus(NULL),
         _panel(NULL),
         _display(NULL),
         _ts(NULL),
+        _disp_draw_buf(NULL),
         _term_log(NULL),
-        _canvas_buf(NULL) {}
+        _chart(NULL),
+        _cpu_series(NULL),
+        _ram_series(NULL) {}
 
-//    bool begin(xQueGL *vec_q, int priority);
-    bool begin(xQueWeb *vec_q, int priority);
+    bool begin(xQueGL *vec_q, int priority);
 };
 
 #else // !(ARDUINO || ESP32)
