@@ -7,7 +7,7 @@
 #define QUE_BUF_SZ 128
 typedef struct {
     char buf[QUE_BUF_SZ];
-} que_msg_t;
+} msg_web_t;
 
 /* Queue B: Abstract drawing operations passing from Forth -> LVGL Renderer */
 typedef enum {
@@ -21,6 +21,7 @@ typedef struct {
     int16_t  y1;
     int16_t  x2;
     int16_t  y2;
-} draw_vec_t;
+    char     buf[QUE_BUF_SZ];
+} msg_gl_t;
 
 #endif // _XBRIDGE_H
