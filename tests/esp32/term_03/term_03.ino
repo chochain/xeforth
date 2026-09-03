@@ -137,11 +137,13 @@ void setup() {
 
     lv_init();
     
+    // 2. Allocate the 480x40 true-color frame buffer strictly in External PSRAM
     uint32_t buffer_pixel_size = SCREEN_WIDTH * 40;
     disp_draw_buf = (lv_color_t *)ps_malloc(buffer_pixel_size * sizeof(lv_color_t));
     if (disp_draw_buf == NULL) while(1);
     lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, buffer_pixel_size);
 
+    // 3. Instantiate the LVGL Canvas widget container
     static lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = SCREEN_WIDTH;
