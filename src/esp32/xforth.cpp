@@ -44,7 +44,7 @@ void XForth::feedback(int len, const char *rst) {
     int sz = std::min(len, (QUE_BUF_SZ - 1));
     memcpy(msg.buf, rst, sz);                 /// leave last byte to
     msg.buf[sz] = '\0';                       /// ensure \0 terminated
-    msg.op_code = VECTOR_LINE;
+    msg.op_code = VECTOR_CMD;
         
     if (xQueueSend((QueueHandle_t)_out_q, &msg, 0) != pdTRUE) {
         Serial.printf("xforth out_q failed on %s\n", rst);
@@ -56,7 +56,8 @@ void XForth::parseAndExecuteTokens(char* cmd) {
 
     forth_vm(cmd, feedback);             /// one-line per call
     return;
-
+    
+#if 0  /* outer interpreter, without istringstream */
     // Extract the very first token word from the continuous text buffer
     // using the reentrant, thread-safe strtok_r function
     char* save_ptr;
@@ -70,4 +71,5 @@ void XForth::parseAndExecuteTokens(char* cmd) {
         // Seek out the next individual space-separated command segment
         idiom = strtok_r(NULL, " ", &save_ptr);
     }
+#endif    
 }
