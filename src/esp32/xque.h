@@ -54,8 +54,8 @@ public:
     }
 };
 
-typedef XQueue<que_msg_t>  xQueWeb;
-typedef XQueue<draw_vec_t> xQueGL;
+typedef XQueue<msg_web_t>  xQueWeb;
+typedef XQueue<msg_gl_t>   xQueGL;
 typedef uint32_t           UBaseType_t;
 
 #endif // (ARDUINO || ESP32)
