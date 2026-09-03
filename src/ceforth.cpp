@@ -616,7 +616,6 @@ void dict_validate() {
                    i, g->pfa, c->pfa, g->attr, c->attr);
         }
     }
-    dict_dump(10);
     /// check xtoff range
     max -= Code::XT0;
     if (max & EXT_FLAG) {                     /// range check
