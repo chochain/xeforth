@@ -48,7 +48,7 @@ private:
     // Internal hardware initialization method
     void initHardwarePanel();
     void parse(char *cmd);
-    void print(const char *text, lv_color_t textColor);
+    void term_print(const char *text, lv_color_t textColor);
 
 public:
     XGL(uint32_t width = SCREEN_WIDTH, uint32_t height = SCREEN_HEIGHT) :
@@ -66,7 +66,7 @@ public:
         _cpu_series(NULL),
         _ram_series(NULL) {}
 
-    bool begin(xQueGL *vec_q, int priority);
+    bool begin(xQueGL *gl_q, int priority);
 };
 
 #else // !(ARDUINO || ESP32)
