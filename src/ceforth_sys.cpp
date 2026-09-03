@@ -162,7 +162,7 @@ void see(IU pfa, int base) {
     }
 }
 void words(int base) {
-    const int WIDTH = 60;
+    const int WIDTH = 56;
     int sz = 0;
     fout << setbase(10);
     for (int i=0; i<dict.idx; i++) {
@@ -210,7 +210,7 @@ void ss_dump(VM &vm, bool forced) {
         fout << rdx(SS[i], *MEM(vm.base)) << ' ';
     }
     TOS = SS.pop();
-    fout << "ok " << FLUSH;
+    fout << "ok\n" << FLUSH;
 }
 void mem_dump(U32 p0, IU sz, int base) {
     fout << setbase(16) << setfill('0');
