@@ -39,7 +39,7 @@ void XForth::runInterpreterLoop() {
 
 void XForth::feedback(int len, const char *rst) {
     static msg_gl_t msg;
-    Serial.printf("%d> %s\n", len, rst);
+    Serial.printf("%d> %s", len, rst);
         
     int sz = std::min(len, (QUE_BUF_SZ - 1));
     memcpy(msg.buf, rst, sz);                 /// leave last byte to
