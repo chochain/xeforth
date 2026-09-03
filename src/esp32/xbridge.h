@@ -12,7 +12,8 @@ typedef struct {
 /* Queue B: Abstract drawing operations passing from Forth -> LVGL Renderer */
 typedef enum {
     VECTOR_CLEAR = 0,
-    VECTOR_LINE  = 1
+    VECTOR_LINE  = 1,
+    VECTOR_CMD   = 2
 } vector_op_t;
 
 typedef struct {
