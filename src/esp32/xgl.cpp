@@ -53,7 +53,7 @@ void my_touchpad_read(lv_indev_drv_t *touch_drv, lv_indev_data_t *data) {
 }
 
 //bool XGL::begin(xQueGL *vec_q, int priority) {
-bool XGL::begin(xQueWeb *gl_q, int priority) {
+bool XGL::begin(xQueGL *gl_q, int priority) {
     if (gl_q == NULL) return false;
     _gl_q = gl_q;
 
@@ -72,7 +72,9 @@ bool XGL::begin(xQueWeb *gl_q, int priority) {
 }
 
 // Thread-safe terminal stream printer
-void XGL::print(const char *text, lv_color_t textColor) {
+void XGL::term_print(const char *text, lv_color_t textColor) {
+    Serial.printf("xgl >> %s", text);
+    
     // Append text to terminal object canvas
     lv_textarea_add_text(_term_log, text);
     
@@ -84,20 +86,20 @@ void XGL::print(const char *text, lv_color_t textColor) {
 void XGL::parse(char *cmd) {
     // --- YOUR PROCESSING HUB (Serial / Forth / MQTT Interface) ---
     if (strcmp(cmd, "help")==0) {
-        print("Guition Shell Commands:\n - CLEAR : Wipe Log Screen\n - STATS : Dump Device Telemetry\n", lv_color_white());
+        term_print("Guition Shell Commands:\n - CLEAR : Wipe Log Screen\n - STATS : Dump Device Telemetry\n", lv_color_white());
     } 
     else if (strcmp(cmd, "clear")==0) {
         lv_textarea_set_text(_term_log, "");
     } 
     else if (strcmp(cmd, "stats")==0) {
-        char stats_buf[64];
+        char stats_buf[128];
         sprintf(stats_buf, "Free Heap: %d KB | Free PSRAM: %d KB\n", 
                 ESP.getFreeHeap() / 1024, ESP.getFreePsram() / 1024);
-        print(stats_buf, lv_color_make(0, 255, 0));
+        term_print(stats_buf, lv_color_make(0, 255, 0));
     } 
     else {
         // Mock output template for your Forth engine
-        print("Executing... ok\n", lv_color_make(150, 150, 150));
+        term_print(cmd, lv_color_make(150, 150, 150));
     }
 }
 
@@ -108,30 +110,23 @@ void XGL::runRenderLoop() {
     msg_gl_t  msg;
     while (1) {
         // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
-        while (xQueueReceive((QueueHandle_t)_gl_q, &msg, portMAX_DELAY) == pdTRUE) {
-            Serial.printf("xgl >> %s\n", msg.buf);
-            
+        while (xQueueReceive((QueueHandle_t)_gl_q, &msg, 0) == pdTRUE) {
             switch (msg.op_code) {
-                case VECTOR_LINE: {
-#if 0                    
-                    // Map parameters straight to an LVGL v8.4 coordinate array structure
-                    lv_point_t pts[2] = {
-                        { vec.x1, vec.y1 },
-                        { vec.x2, vec.y2 }
-                    };
-                    // Direct vector drawing call into our isolated canvas object
-                    lv_textarea_add_text(_term_log, "hit here");
-    
-                    // Auto-scroll logic: lock view frame to bottom lines
-                    uint32_t txt_len = strlen(lv_textarea_get_text(_term_log));
-                    lv_textarea_set_cursor_pos(_term_log, txt_len);
-#endif
-                    print(msg.buf, lv_color_make(0, 255, 255));
-                    break;
-                }
-                case VECTOR_CLEAR:
-                    print("clear", lv_color_make(255, 0, 0));
-                    break;
+            case VECTOR_CLEAR:
+                term_print("clear", lv_color_make(255, 0, 0));
+                break;
+            case VECTOR_LINE: {
+                // Map parameters straight to an LVGL v8.4 coordinate array structure
+                lv_point_t pts[2] = {
+                    { msg.x1, msg.y1 },
+                    { msg.x2, msg.y2 }
+                };
+                // Direct vector drawing call into our isolated canvas object
+                lv_textarea_add_text(_term_log, "hit here");
+            } break;
+            case VECTOR_CMD:
+                term_print(msg.buf, lv_color_make(0, 255, 255));
+                break;
             }
         }
         static uint32_t last_tick = 0;
@@ -140,8 +135,9 @@ void XGL::runRenderLoop() {
         // 6. Force LVGL to run layout ticks, handle touch states, and pump DMA pixels
         lv_timer_handler();
 
-        // 2. LIVE TELEMETRY LOG DATA MODULATION (Updates every 500ms)
-        if ((last_tick=millis()) - last_tick > 50) {
+        // 2. LIVE TELEMETRY LOG DATA MODULATION (Updates every 50ms)
+        if ((millis() - last_tick) > 50) {
+            last_tick = millis();
             // Shift existing values backward
             for (int i = 0; i < 29; i++) {
                 _cpu_series->y_points[i] = _cpu_series->y_points[i + 1];
@@ -208,7 +204,7 @@ void XGL::initHardwarePanel() {
     // Allocate a high-speed 40-line rendering slice block inside internal PSRAM memory
     // 2. Allocate the 480x40 true-color frame buffer strictly in External PSRAM
     size_t     buf_sz = _width * 40;
-    _disp_draw_buf = (lv_color_t *)ps_malloc(buf_sz * sizeof(lv_color_t));
+    _disp_draw_buf    = (lv_color_t*)ps_malloc(buf_sz * sizeof(lv_color_t));
     
     if (_disp_draw_buf == NULL) {
         Serial.println("Fatal: Failed to allocate frame canvas buffer in PSRAM!");
@@ -225,13 +221,22 @@ void XGL::initHardwarePanel() {
     disp_drv.draw_buf  = &_draw_buf;
     // Crucial: Pass the _display pointer into user_data so the callback can access it safely
     disp_drv.user_data = (void*)_display; 
-    lv_disp_drv_register(&disp_drv);
+    lv_disp_t *reg_disp = lv_disp_drv_register(&disp_drv);
 
-    // Deep Dark Industrial Styling Matrix
-    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_make(10, 12, 16), 0);
+    // 👇 FIX #2 ADDED: Formally instantiate and register the Touch Input Driver into LVGL
+    static lv_indev_drv_t indev_drv;
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.type = LV_INDEV_TYPE_POINTER;
+    indev_drv.read_cb = my_touchpad_read;
+    indev_drv.user_data = (void*)_ts; // Pass touch object straight to the callback
+    lv_indev_drv_register(&indev_drv);
+    
+    // capture active screen (when multi-threading)
+    lv_obj_t  *act_scr  = lv_disp_get_scr_act(reg_disp); 
+    lv_obj_set_style_bg_color(act_scr, lv_color_make(10, 12, 16), 0);  // Deep Dark Industrial Styling Matrix
     
     // ==================== PANEL 1: SYSTEM METRICS CHART (Top) ====================
-    _chart = lv_chart_create(lv_scr_act());
+    _chart = lv_chart_create(act_scr);
     lv_obj_set_size(_chart, _width - 20, 150);
     lv_obj_align(_chart, LV_ALIGN_TOP_MID, 0, 10);
     lv_chart_set_type(_chart, LV_CHART_TYPE_LINE);
@@ -252,7 +257,7 @@ void XGL::initHardwarePanel() {
     }
     
     // ==================== PANEL 2: SCROLLING TERMINAL CANVAS (Bottom) ====================
-    _term_log = lv_textarea_create(lv_scr_act());
+    _term_log = lv_textarea_create(act_scr);
     lv_obj_set_size(_term_log, _width - 20, 290);
     lv_obj_align(_term_log, LV_ALIGN_BOTTOM_MID, 0, -10);
     
