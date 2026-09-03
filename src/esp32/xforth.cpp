@@ -1,8 +1,7 @@
 #include "xforth.h"
 
-xQueWeb *XForth::_out_q = NULL;
-//bool XForth::begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
-bool XForth::begin(xQueWeb *in_q, xQueWeb *out_q, int priority) {
+xQueGL *XForth::_out_q = NULL;
+bool XForth::begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
     if (in_q == NULL) return false;
     _in_q  = in_q;
     _out_q = out_q;
@@ -24,7 +23,7 @@ bool XForth::begin(xQueWeb *in_q, xQueWeb *out_q, int priority) {
 void XForth::runInterpreterLoop() {
     Serial.printf("core%d xforth> Background thread online.\n", _core);
 
-    que_msg_t rx_msg;
+    msg_web_t rx_msg;
     while (1) {
         // Wait indefinitely (portMAX_DELAY) using 0% CPU cycles until a packet hits the queue
         if (xQueueReceive((QueueHandle_t)_in_q, &rx_msg, portMAX_DELAY) == pdTRUE) {
@@ -39,12 +38,13 @@ void XForth::runInterpreterLoop() {
 }
 
 void XForth::feedback(int len, const char *rst) {
-    static que_msg_t msg;
+    static msg_gl_t msg;
     Serial.printf("%d> %s\n", len, rst);
         
     int sz = std::min(len, (QUE_BUF_SZ - 1));
     memcpy(msg.buf, rst, sz);                 /// leave last byte to
     msg.buf[sz] = '\0';                       /// ensure \0 terminated
+    msg.op_code = VECTOR_LINE;
         
     if (xQueueSend((QueueHandle_t)_out_q, &msg, 0) != pdTRUE) {
         Serial.printf("xforth out_q failed on %s\n", rst);
