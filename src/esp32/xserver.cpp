@@ -113,7 +113,7 @@ bool XServer::begin(xQueWeb *web_q, int priority) {
 
 BaseType_t XServer::parse(std::string_view view, std::string_view delim) {
     size_t    start = 0;
-    que_msg_t msg;
+    msg_web_t msg;
 
     while (start < view.size()) {
         // 1. Skip leading delimiters
@@ -175,7 +175,7 @@ void XServer::runServerLoop() {
         const AsyncWebParameter* p = req->getParam("forth_code", true);
 
         String str = p->value();
-
+        
         std::string_view view(str.c_str(), str.length());
         if (parse(view, "\n") == pdTRUE) {
             req->send(200, "text/plain", "Queued.");
