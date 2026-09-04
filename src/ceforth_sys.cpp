@@ -162,7 +162,7 @@ void see(IU pfa, int base) {
     }
 }
 void words(int base) {
-    const int WIDTH = 56;
+    const int WIDTH = 44;
     int sz = 0;
     fout << setbase(10);
     for (int i=0; i<dict.idx; i++) {
