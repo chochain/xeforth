@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <stdint.h>     // uintxx_t
 #include <exception>    // try...catch, throw
-#include <string>       // string class
 #include "config.h"     // configuation and cross-platform support
 
 using namespace std;
@@ -19,6 +18,7 @@ typedef  condition_variable COND_VAR;
 #define  WAIT(cv,g)         (cv).wait(_xlck_, g)           /** wait for condition */
 #define  NOTIFY(cv)         (cv).notify_one()              /** wake up one task   */
 #define  NOTIFY_ALL(cv)     (cv).notify_all();
+
 #endif // DO_MULTITASK
 ///
 /// array class template (so we don't have dependency on C++ STL)
@@ -40,10 +40,16 @@ struct List {
     ~List() {
         clear(ro);
         if (v) delete[] v;                              ///< free container
+#if 0  // CC: Debug
+        if constexpr(is_pointer<T>::value) {         ///< free elements
+            for (int i=0; v && i<idx; i++) delete v[i];
+        }
+#endif        
+        if (v) delete[] v;                           ///< free container
     }              
     List &operator=(T *a)   INLINE { v = a; return *this; }
     T    &operator[](int i) INLINE { return i < 0 ? v[idx + i] : v[i]; }
-    void readonly_below(int i)  { ro = i; }
+    void readonly_below(int i)     { ro = i; }
 
 #if RANGE_CHECK
     T pop()     INLINE {
@@ -80,6 +86,7 @@ typedef enum { STOP=0, HOLD, QUERY, NEST } vm_state;
 struct ALIGNAS VM {
     List<DU, E4_SS_SZ> ss;         ///< parameter stack
     List<DU, E4_RS_SZ> rs;         ///< parameter stack
+    char     pad[E4_PAD_SZ];       ///< temp pad buffer
 
     IU       id      = 0;          ///< vm id
     IU       ip      = 0;          ///< instruction pointer
@@ -88,7 +95,7 @@ struct ALIGNAS VM {
     bool     compile = false;      ///< compiler flag
     vm_state state   = STOP;       ///< VM status
     IU       base    = 0;          ///< numeric radix (a pointer)
-    
+
 #if DO_MULTITASK
     static int      NCORE;         ///< number of hardware cores
     
@@ -144,7 +151,7 @@ typedef enum {
 } prim_op;
 
 #define USER_AREA  (ALIGN16(MAX_OP & ~EXT_FLAG))
-#define IS_PRIM(w) ((w & EXT_FLAG) && (w < MAX_OP))
+#define IS_PRIM(w) (((w) & EXT_FLAG) && (((w) & ~EXT_FLAG) < (MAX_OP & ~EXT_FLAG)))
 ///@}
 ///@name Code class
 ///@brief - basic struct of dictionary entries
@@ -243,34 +250,34 @@ void task_start(int tid);                 ///< start a thread with given task/VM
 ///@name System interface
 ///@{
 void forth_init();
-int  forth_vm(const char *cmd, void(*hook)(int, const char*)=NULL);
+int  forth_vm(const char *cmd, void(*hook)(int, const char*)=nullptr);
 void forth_include(const char *fn);       /// load external Forth script
 void outer(istream &in);                  ///< Forth outer loop
 ///@}
 ///@name IO functions
 ///{@
-typedef enum { RDX=0, CR, DOT, UDOT, EMIT, SPCS } io_op;
+typedef enum { CR=0, DOT, UDOT, EMIT, SPCS } io_op;
 
 void fin_setup(const char *line);
 void fout_setup(void (*hook)(int, const char*));
 
-const char *scan(char c);                 ///< scan input stream for a given char
-const char *word();                       ///< get next idiom
-int  fetch(string &idiom);                ///< read input stream into string
-char key();                               ///< read key from console
-void load(VM &vm, const char* fn);        ///< load external Forth script
-void spaces(int n);                       ///< show spaces
-void dot(io_op op, DU v=DU0);             ///< print literals
-void dotr(int w, DU v, int b, bool u=false); ///< print fixed width literals
-void pstr(const char *str, io_op op=SPCS);///< print string
+const char *scan(char c, char *buf, int max=E4_PAD_SZ);  ///< scan input stream for a given char
+const char *word(char *buf, int max=E4_PAD_SZ);          ///< get next idiom
+int  fetch(char *buf, int max=E4_IBUF_SZ);               ///< read input stream into buffer
+char key();                                              ///< read key from console
+void load(VM &vm, const char* fn);                       ///< load external Forth script
+void spaces(int n);                                      ///< show spaces
+void dot(io_op op, DU v=DU0, int base=10);               ///< print literals
+void dotr(int w, DU v, int base=10, bool u=false);       ///< print fixed width literals
+void pstr(const char *str, io_op op=SPCS);               ///< print string
 ///@}
 ///@name Debug functions
 ///@{
 Code *prim_or_dict(IU w);                 ///< dictionary pointer
 void ss_dump(VM &vm, bool forced=false);  ///< show data stack content
 void see(IU pfa, int base);               ///< disassemble user defined word
-void words(int base);                     ///< list dictionary words
-void dict_dump(int base);                 ///< dump dictionary
+void words();                             ///< list dictionary words
+void dict_dump();                         ///< dump dictionary
 void mem_dump(U32 addr, IU sz, int base); ///< dump memory frm addr...addr+sz
 void mem_stat();                          ///< display memory statistics
 ///@}
