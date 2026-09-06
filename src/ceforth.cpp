@@ -73,6 +73,8 @@ U8  *MEM0;                         ///< base of parameter memory block
 #define IGET(ip)  (*(IU*)MEM(ip))          /**< instruction fetch from pmem+ip offset   */
 #define CELL(a)   (*(DU*)&pmem[a])         /**< fetch a cell from parameter memory      */
 #define SETJMP(a) (*(IU*)&pmem[a] = HERE)  /**< address offset for branching opcodes    */
+#define SCAN(c)   (scan(c, vm.pad, E4_PAD_SZ))
+#define WORD()    (word(vm.pad, E4_PAD_SZ))
 ///@}
 ///@name Primitive words (to simplify compiler), see nest() for details
 ///@{
@@ -131,7 +133,7 @@ void add_w(IU w) {                  ///< add a word index into pmem
     add_iu(ip);
 #if CC_DEBUG > 1
     LOG_KV("add_w(", w); LOG_KX(") => ", ip);
-    LOGS(" "); LOGS(c.name); LOGS("\n");
+    LOGS(" "); LOGS(c->name); LOGS("\n");
 #endif // CC_DEBUG > 1
 }
 void add_var(IU op, DU v=DU0) {     ///< add a varirable header
@@ -155,7 +157,7 @@ int def_word(const char* name) {    ///< display if redefined
     return 1;                       /// * created OK
 }
 void s_quote(VM &vm, prim_op op) {
-    const char *s = scan('"')+1;    ///> string skip first blank
+    const char *s = SCAN('"')+1;    ///> string skip first blank
     if (vm.compile) {
         add_w(op);                  ///> dostr, (+parameter field)
         add_str(s);                 ///> byte0, byte1, byte2, ..., byteN
@@ -395,12 +397,12 @@ constexpr Code g_rom[] = {                 ///< ROM
     /// @defgroup IO ops
     /// @{
     CODE("base",    PUSH(vm.base)),
-    CODE("decimal", dot(RDX, *BASE=10)),
-    CODE("hex",     dot(RDX, *BASE=16)),
+    CODE("decimal", *BASE=10),
+    CODE("hex",     *BASE=16),
     CODE("bl",      PUSH(0x20)),
     CODE("cr",      dot(CR)),
-    CODE(".",       dot(DOT,  POP())),
-    CODE("u.",      dot(UDOT, POP())),
+    CODE(".",       dot(DOT,  POP(), *BASE)),
+    CODE("u.",      dot(UDOT, POP(), *BASE)),
     CODE(".r",      IU w = POPI(); dotr(w, POP(), *BASE)),
     CODE("u.r",     IU w = POPI(); dotr(w, POP(), *BASE, true)),
     CODE("type",    POP(); pstr((const char*)MEM(POP()))),   /// pass string pointer
@@ -411,9 +413,9 @@ constexpr Code g_rom[] = {                 ///< ROM
     /// @}
     /// @defgroup Literal ops
     /// @{
-    IMMD("(",       scan(')')),
-    IMMD(".(",      pstr(scan(')'))),
-    IMMD("\\",      scan('\n')),
+    IMMD("(",       SCAN(')')),
+    IMMD(".(",      pstr(SCAN(')'))),
+    IMMD("\\",      SCAN('\n')),
     IMMD("s\"",     s_quote(vm, STR)),
     IMMD(".\"",     s_quote(vm, DOTQ)),
     /// @}
@@ -462,14 +464,14 @@ constexpr Code g_rom[] = {                 ///< ROM
     /// @{
     CODE("[",       vm.compile = false),
     CODE("]",       vm.compile = true),
-    CODE(":",       vm.compile = def_word(word())),
+    CODE(":",       vm.compile = def_word(WORD())),
     IMMD(";",       add_w(EXIT); vm.compile = false),
-    CODE("variable",def_word(word()); add_var(VAR)),         /// create a variable
+    CODE("variable",def_word(WORD()); add_var(VAR)),         /// create a variable
     CODE("constant",                                         /// create a constant
-         def_word(word());                                   /// create a new word on dictionary
+         def_word(WORD());                                   /// create a new word on dictionary
          add_var(LIT, POP());                                /// dovar (+parameter field)
          add_w(EXIT)),
-    IMMD("postpone",  IU w = find(word()); if (w) add_w(w)),
+    IMMD("postpone",  IU w = find(WORD()); if (w) add_w(w)),
     CODE("immediate", dict[-1]->imm()),                      /// * set last word immediate
     CODE("exit",    UNNEST()),                               /// early exit the colon word
     /// @}
@@ -477,10 +479,10 @@ constexpr Code g_rom[] = {                 ///< ROM
     /// @brief - dict is directly used, instead of shield by macros
     /// @{
     CODE("exec",   IU w = POP(); CALL(vm, w)),               /// execute word
-    CODE("create", def_word(word()); add_var(VBRAN)),        /// bran + offset field
+    CODE("create", def_word(WORD()); add_var(VBRAN)),        /// bran + offset field
     IMMD("does>",  add_w(DOES)),
     IMMD("to",                                               /// alter the value of a constant, i.e. 3 to x
-         IU w = vm.state==QUERY ? find(word()) : POP();      /// constant addr
+         IU w = vm.state==QUERY ? find(WORD()) : POP();      /// constant addr
          if (!w) return;
          if (vm.compile) {
              add_var(LIT, (DU)w);                            /// save addr on stack
@@ -491,7 +493,7 @@ constexpr Code g_rom[] = {                 ///< ROM
              *(DU*)MEM(DALIGN(w)) = POP();                   /// update constant
          }),
     IMMD("is",              /// ' y is x                     /// alias a word, i.e. ' y is x
-         IU w = vm.state==QUERY ? find(word()) : POP();      /// word addr
+         IU w = vm.state==QUERY ? find(WORD()) : POP();      /// word addr
          if (!w) return;
          if (vm.compile) {
              add_var(LIT, (DU)w);                            /// save addr on stack
@@ -509,7 +511,7 @@ constexpr Code g_rom[] = {                 ///< ROM
          PUSH(w < USER_AREA ? (DU)IGET(w) : CELL(w))),       /// check user area
     CODE("!",     IU w = POPI(); CELL(w) = POP()),           /// n w --
     CODE("+!",    IU w = POPI(); CELL(w) += POP()),          /// n w --
-    CODE("?",     IU w = POPI(); dot(DOT, CELL(w))),         /// w --
+    CODE("?",     IU w = POPI(); dot(DOT, CELL(w), *BASE)),  /// w --
     CODE(",",     DU n = POP(); add_du(n)),                  /// n -- , compile a cell
     CODE("cells", IU i = POPI(); PUSH(i * sizeof(DU))),      /// n -- n'
     CODE("allot",                                            /// n --
@@ -540,13 +542,13 @@ constexpr Code g_rom[] = {                 ///< ROM
     /// @{
     CODE("abort", TOS = -DU1; SS.clear(); RS.clear()),       /// clear ss, rs
     CODE("here",  PUSH(HERE)),
-    IMMD("'",     IU w = find(word()); if (w) PUSH(w)),
+    IMMD("'",     IU w = find(WORD()); if (w) PUSH(w)),
     CODE(".s",    ss_dump(vm, true)),
-    CODE("words", words(*BASE)),
+    CODE("words", words()),
     CODE("see",
-         IU w = find(word()); if (!w) return;
+         IU w = find(WORD()); if (!w) return;
          Code *x = dict[w];
-         pstr(": "); pstr(x->name);
+         pstr(": "); pstr(x->name, CR);
          if (x->is_udf()) see(x->pfa, *BASE);
          else             pstr(" ( built-ins ) ;");
          dot(CR)),
@@ -555,9 +557,9 @@ constexpr Code g_rom[] = {                 ///< ROM
     CODE("dump",
          U32 n = POPI();
          mem_dump(POPI(), n, *BASE)),
-    CODE("dict",  dict_dump(*BASE)),
+    CODE("dict",  dict_dump()),
     CODE("forget",
-         IU w = find(word()); if (!w) return;               /// bail, if not found
+         IU w = find(WORD()); if (!w) return;               /// bail, if not found
          IU b = find("boot")+1;
          if (w > b) {                                       /// clear to specified word
              pmem.clear(dict[w]->pfa - STRLEN(dict[w]->name));
@@ -571,7 +573,7 @@ constexpr Code g_rom[] = {                 ///< ROM
     /// @}
     /// @defgroup OS ops
     /// @{
-    IMMD("include", load(vm, word())),                      /// include an OS file
+    IMMD("include", load(vm, WORD())),                      /// include an OS file
     CODE("included",                                        /// include file spec on stack
          POP();                                             /// string length, not used
          load(vm, (const char*)MEM(POP()))),                /// include external file
@@ -654,13 +656,12 @@ DU2 parse_number(const char *idiom, int base, int *err) {
 
 void forth_core(VM& vm, const char *idiom) {     ///> aka QUERY
     vm.state = QUERY;
-    IU w = find(idiom);                  ///> * get token by searching through dict
-    if (w) {                             ///> * word found?
-        if (vm.compile &&                /// * in compile mode?
-            !dict[w]->is_imm()) {        /// * or immediate?
-            add_w(w);                    /// * add to colon word
+    IU w = find(idiom);                          ///> * get token by searching through dict
+    if (w) {                                     ///> * word found?
+        if (vm.compile && !dict[w]->is_imm()) {  /// * in compile mode or immediate?
+            add_w(w);                            /// * add to colon word
         }
-        else { IP = DU0; CALL(vm, w); }  /// * execute forth word
+        else { IP = DU0; CALL(vm, w); }          /// * execute forth word
         return;
     }
     /// try as a number
@@ -713,9 +714,9 @@ int forth_vm(const char *line, void(*hook)(int, const char*)) {
     fout_setup(hook);
     fin_setup(line);                                        /// * refresh buffer if not resuming
     
-    string idiom;
-    while (fetch(idiom)) {                                  /// * parse a word
-        forth_core(vm, idiom.c_str());                      /// * outer interpreter
+    char idiom[E4_IBUF_SZ];
+    while (fetch(idiom, E4_IBUF_SZ)) {                      /// * parse a word
+        forth_core(vm, idiom);                              /// * outer interpreter
     }
     if (!vm.compile) ss_dump(vm);
     
