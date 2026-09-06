@@ -18,6 +18,7 @@
 #define E4_DICT_SZ      400
 #define E4_PMEM_SZ      (32*1024)
 #define E4_VM_POOL_SZ   4               /**< one plus # cors       */
+#define E4_PAD_SZ       66              /**< temp pad size         */
 #define E4_IBUF_SZ      128             /**< input buffer size     */
 #define E4_OBUF_SZ      1024            /**< output buffer size    */
 ///@}
@@ -92,7 +93,6 @@ typedef int32_t         DU;
 #define STRLEN(s)       (ALIGN(strlen(s)+1))  /** calculate string size with alignment */
 #define CALLBACK        fout_cb((int)fout.str().length(), fout.str().c_str()); fout.str("")
 #define FLUSH           flush; CALLBACK
-#define ENDL            endl; CALLBACK
 ///@}
 ///@name Multi-platform support
 ///@{
@@ -150,7 +150,7 @@ typedef int32_t         DU;
 #define VM_TLR(vm, fmt, ...)                  \
     printf("\e[%dm" fmt "\e[0m\n",            \
            ((vm)->id&7) ? 38-((vm)->id&7) : 37, ##__VA_ARGS__)
-#endif // DO_WASM || (ESP32 || ARDUINO) || (_WIN32 || _WIN64)    
+#endif // (ESP32 || ARDUINO)
 #define VM_LOG(vm, fmt, ...)                  \
     VM_HDR(vm, fmt, ##__VA_ARGS__);           \
     printf("\n")
