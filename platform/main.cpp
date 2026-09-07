@@ -87,7 +87,7 @@ int main(int argc, char *argv[]) {
 
     /* 1. Allocate the communication queues safely on the host system memory map */
     xQueWeb web_bridge(10, 50);
-    xQueUI  ui_bridge(10, 10);
+    xQueUI  ui_bridge(10);
 
     /* 2. Instantiate and connect our structural systems */
     SimulatedForth forthEngine;
@@ -108,7 +108,7 @@ int main(int argc, char *argv[]) {
     };
 
     /* 3. Simulate an HTTP POST action pushing data into the front of the bridge */
-   msg_raw_t post;
+    msg_raw_t post;
     for (int i=0; i < (int)(sizeof(cmd)/sizeof(char*)); i++) {
         std::cout << "\nUser: " << cmd[i] << std::endl;
         
