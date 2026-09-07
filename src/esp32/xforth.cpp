@@ -23,18 +23,18 @@ bool XForth::begin(xQueWeb *web, xQueUI *ui, int priority) {
 void XForth::runInterpreterLoop() {
     Serial.printf("core%d xforth> Background thread online.\n", _core);
 
-    msg_raw_t web_msg;
-    msg_gui_t gui_msg;
+    msg_raw_t raw_req;
+    msg_gui_t gui_rsp;
     while (1) {
-        while (_web->recv(web_msg)) {
-            Serial.printf("core%d xforth> incoming cmd -> %s\n", _core, web_msg.buf);
+        while (_web->get_req(raw_req)) {
+            Serial.printf("core%d xforth> incoming cmd -> %s\n", _core, raw_req.buf);
             
             // Execute non-fragmenting multi-token text processing
-            parseAndExecuteTokens((char*)web_msg.buf);
+            parseAndExecuteTokens((char*)raw_req.buf);
 
             // Brief safety heartbeat yield hook
         }
-        while (_ui->recv(gui_msg)) {
+        while (_ui->get_rsp(gui_rsp)) {
             // do nothing for now
         }
         vTaskDelay(_tick);
@@ -42,15 +42,15 @@ void XForth::runInterpreterLoop() {
 }
 
 void XForth::feedback(int len, const char *rst) {
-    static msg_gui_t msg;
+    static msg_gui_t gui_req;
     Serial.printf("%d> %s", len, rst);
         
     int sz = std::min(len, (QUE_BUF_SZ - 1));
-    memcpy(msg.buf, rst, sz);                 /// leave last byte to
+    memcpy(gui_req.buf, rst, sz);             /// leave last byte to
     msg.buf[sz] = '\0';                       /// ensure \0 terminated
     msg.op_code = VECTOR_CMD;
         
-    if (!_ui->send(msg)) {
+    if (!_ui->put_req(gui_req)) {
         Serial.printf("xforth out_q failed on %s\n", rst);
     }
 }
