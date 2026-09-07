@@ -51,6 +51,8 @@ public:
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+typedef uint32_t UBaseType_t;
+typedef int32_t  BaseType_t;
 
 template <typename T>
 class XQueue {
@@ -92,6 +94,7 @@ public:
         return receive_non_blocking(item);
     }
 };
+
 #endif // (ARDUINO || ESP32)
 
 // ==========================================
@@ -106,9 +109,9 @@ private:
 public:
     XQPair(size_t snd_qsz = 10, size_t rcv_qsz = 10) : _q_snd(snd_qsz), _q_rcv(rcv_qsz) {}
 
-    bool send(const SndT &item) { return _q_snd.send_non_blocking(item) == pdTRUE;    }
-    bool recv(RcvT &item)       { return _q_rcv.receive_non_blocking(item) == pdTRUE; }
-    void wait_for(RcvT &item)   { _q_rcv.receive_blocking(item); }
+    bool send(const SndT &item) { return _q_snd.send_non_blocking(item);    }
+    bool recv(RcvT &item)       { return _q_rcv.receive_non_blocking(item); }
+    void wait_for(RcvT &item)   { _q_rcv.receive_blocking(item);            }
     /* ISR Context API */
     bool isr_send(const SndT &item, BaseType_t *isr_priority) { 
         return _q_snd.send_from_isr(item, isr_priority); 
@@ -120,7 +123,6 @@ public:
 
 typedef XQPair<msg_raw_t, msg_raw_t> xQueWeb;
 typedef XQPair<msg_gui_t, msg_gui_t> xQueUI;
-typedef uint32_t                     UBaseType_t;
 
 #endif // _XQUE_H
 
