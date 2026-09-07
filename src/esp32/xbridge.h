@@ -6,8 +6,8 @@
 /* Queue A: Text input boundaries passing from Web Interface -> Forth Processor */
 #define QUE_BUF_SZ 128
 typedef struct {
-    char buf[QUE_BUF_SZ];
-} msg_web_t;
+    uint8_t buf[QUE_BUF_SZ];
+} msg_raw_t;
 
 /* Queue B: Abstract drawing operations passing from Forth -> LVGL Renderer */
 typedef enum {
@@ -22,7 +22,7 @@ typedef struct {
     int16_t  y1;
     int16_t  x2;
     int16_t  y2;
-    char     buf[QUE_BUF_SZ];
-} msg_gl_t;
+    uint8_t  buf[QUE_BUF_SZ];
+} msg_gui_t;
 
 #endif // _XBRIDGE_H
