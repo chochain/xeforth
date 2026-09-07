@@ -4,20 +4,19 @@
 ///
 /*
 [ WEB BROWSER ] 
-       │ (HTTP POST "forth_code")
-       ▼
+  │ (HTTP POST "forth_code")
 [ CORE 0: Web Server Task ] (Priority 6)
-       │ (Parses string, packs struct, calls xQueueSend)
-       ▼ [ webToForthQueue ] 
+  │ (Parses string, packs struct, calls xQueueSend)
+  ▼ [ webToForthQueue ] 
 [ CORE 0: Forth VM Task ] (Priority 5)
-       │ (Suspends/Awakes via xQueueReceive, interprets tokens)
-       │ (Forth script calls LOGO-LINE primitive word)
-       ▼ [ logo_queue ] 
+  | (xQueueReceive, interprets tokens)
+  | (Forth interprets GUI word)                    |
+  ▼ [ ui_bridge.snd_q ]                          [ ui_bridge.rcv_q ]
 [ CORE 1: LVGL Drawing Task ] (Priority 10)
-       │ (Drains queue via xQueueReceive, maps line onto lv_canvas)
-       │ (Calls lv_timer_handler to push pixels via DMA)
-       ▼
-[ 4848S040 IPS DISPLAY PANEL ]
+  | (xQueueReceive, maps line onto lv_canvas)      ^
+  | (lv_timer_handler pushs pixels via DMA)        |
+  v                                                |
+[ 4848S040 IPS DISPLAY PANEL ]                    [TAMC_GT911]
 */
 ///====================================================================
 #include "soc/soc.h"                      /// * for brown out detector
@@ -35,8 +34,8 @@ const int   WIFI_PORT = 80;               ///< and the password
 
 // Define structural payload contracts uniformly across your files
 // Instantiate Global Message-Routing Pipelines
-xQueWeb *webToForthQueue  = NULL;
-xQueGL  *forthToLvglQueue = NULL;
+xQueWeb *web_bridge = NULL;
+xQueUI  *ui_bridge  = NULL;
 
 // Instantiate the distinct, modular systems with custom parameters
 XServer myWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
@@ -47,10 +46,10 @@ void setup() {
     Serial.begin(115200);
 
     // 1. Build the non-fragmenting communications pipeline channels
-    webToForthQueue  = (xQueWeb*)xQueueCreate(10, sizeof(msg_web_t));  // to use PSRAM, see xQueueCreateWithCaps
-    forthToLvglQueue = (xQueGL* )xQueueCreate(50, sizeof(msg_gl_t));
+    web_bridge = new xQueWeb(10, 50);
+    ui_bridge  = new xQueUI(10, 10);
 
-    if (webToForthQueue == NULL || forthToLvglQueue == NULL) {
+    if (web_bridge == NULL || ui_bridge == NULL) {
         Serial.println("Critical: Failed to generate system pipelines.");
         while(1);
     }
@@ -58,14 +57,14 @@ void setup() {
     mem_stat();
 
     // 2. Deploy Web Server Engine ──> Core 0 (Priority 6)
-    myWebServer.begin(webToForthQueue, 6);
+    myWebServer.begin(web_bridge, 6);
 
     // 3. Deploy Forth VM Interpreter Engine ──> Core 0 (Priority 5)
-    myForthEngine.begin(webToForthQueue, forthToLvglQueue, 5);
+    myForthEngine.begin(web_bridge, ui_bridge, 5);
 
     // 4. Deploy High-Performance Graphic Canvas Engine ──> Core 1 (Priority 10)
     // We give the UI the highest priority layer to guarantee responsive drawing updates
-    myUiRenderer.begin(forthToLvglQueue, 10);
+    myUiRenderer.begin(ui_bridge, 10);
 
     // 5. Safely delete the empty Arduino loop task to reclaim internal SRAM boundaries
     vTaskDelete(NULL);
