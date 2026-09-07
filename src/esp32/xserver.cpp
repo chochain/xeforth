@@ -93,9 +93,9 @@ window.onload = ()=>forth()
 
 )XX";
 
-bool XServer::begin(xQueWeb *web_q, int priority) {
-    if (web_q == NULL) return false;
-    _out_q = web_q;
+bool XServer::begin(xQueWeb *web, int priority) {
+    if (web == NULL) return false;
+    _web = web;
 
     // Launch the background FreeRTOS execution thread on Core 0
     // We pass "this" (the memory address of this class instance) into the 4th parameter slot!
@@ -113,7 +113,7 @@ bool XServer::begin(xQueWeb *web_q, int priority) {
 
 BaseType_t XServer::parse(std::string_view view, std::string_view delim) {
     size_t    start = 0;
-    msg_web_t msg;
+    msg_raw_t msg;
 
     while (start < view.size()) {
         // 1. Skip leading delimiters
@@ -133,7 +133,7 @@ BaseType_t XServer::parse(std::string_view view, std::string_view delim) {
             memcpy(msg.buf, token.data(), sz);        /// leave last byte to
             msg.buf[sz] = '\0';                       /// ensure \0 terminated
 
-            BaseType_t rst = xQueueSend((QueueHandle_t)_out_q, &msg, 0);
+            BaseType_t rst = _web->send(msg);
             if (rst != pdTRUE) return rst;
             // 4. Do your work with the token
             // You can print it directly because C++ streams understand string_view length!
@@ -188,7 +188,11 @@ void XServer::runServerLoop() {
     // Start server. It binds system network handles to background core interrupts.
     _server.begin();
 
+    msg_raw_t msg;
     while (1) {
+        while (_web->recv(msg)) {
+            /// do nothing for now
+        }
         // Core HTTP events are handled in the background via hardware network interrupts,
         // so this main thread loop sleeps deeply to let other Core 0 tasks execute.
         vTaskDelay(pdMS_TO_TICKS(1000));
