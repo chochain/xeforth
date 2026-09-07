@@ -9,11 +9,11 @@ extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
 
 class XForth {
 private:
-    static xQueGL *_out_q;
-    uint32_t     _core;                   /// core id
-    TaskHandle_t _task;                   /// task id
-    uint32_t     _tick;                   /// heartbeat_delay_ms
-    xQueWeb      *_in_q;
+    static xQueUI *_ui;                   ///< _ui  message bridge
+    uint32_t     _core;                   ///< core id
+    TaskHandle_t _task;                   ///< task id
+    uint32_t     _tick;                   ///< heartbeat_delay_ms
+    xQueWeb      *_web;                   ///< _web message bridge
 
     // 🚨 FreeRTOS tasks inside classes MUST be declared as "static void"
     static void vTaskForthBridge(void *pv) {
@@ -27,17 +27,17 @@ private:
     void runInterpreterLoop();
     
     // Thread-safe internal helper to tokenize and split compound string buffers
-    void parseAndExecuteTokens(char* cmd);
+    void parseAndExecuteTokens(char *cmd);
 
 public:
     XForth(uint32_t id, uint32_t heartbeat_ms) : 
         _core(id), 
         _tick(pdMS_TO_TICKS(heartbeat_ms)), 
-        _in_q(NULL), 
+        _web(NULL),
         _task(NULL) {}
 
     // Initializes internal configurations and spins up the FreeRTOS worker thread
-    bool begin(xQueWeb *in_q, xQueGL *out_q, int priority);
+    bool begin(xQueWeb *web, xQueUI *ui, int priority);
 };
 
 #else // !(ARDUINO || ESP32)
@@ -65,8 +65,8 @@ extern "C" {
 class SimulatedForth {
 private:
     std::thread  *_thread;
-    xQueWeb      *_in_q;
-    xQueGL       *_out_q;
+    xQueWeb      *_web;
+    xQueUI       *_ui;
 
     void runInterpreterLoop(void) {
         std::cout << "core0> Forth VM listening pipeline online." << std::endl;
@@ -74,7 +74,7 @@ private:
 
         while (true) {
             /* Block indefinitely using 0% host CPU cycles until a web packet lands */
-            _in_q->receive_blocking(rx_msg);
+            _web->wait_for(rx_msg);
             std::cout << "core0 xforth> cmd received: " << rx_msg.buf << std::endl;
 
             /* Parse text bytes via reentrant thread-safe strtok_r logic matching your hardware architecture */
@@ -91,15 +91,15 @@ private:
     }
 
 public:
-    SimulatedForth(void) : _thread(NULL), _in_q(NULL), _out_q(NULL) {}
+    SimulatedForth(void) : _thread(NULL), _web(NULL), _ui(NULL) {}
     
     ~SimulatedForth() {
         if (_thread) { delete _thread; }
     }
 
-    bool begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
-        _in_q  = in_q;
-        _out_q = out_q;
+    bool begin(xQueWeb *web, xQueUI *ui, int priority) {
+        _web = web;
+        _ui  = ui;
         /* Spin up thread execution path using standard object context injection */
         _thread = new std::thread(&SimulatedForth::runInterpreterLoop, this);
         _thread->detach(); /* Run detached in background */
