@@ -80,7 +80,7 @@ private:
 
     void runRenderLoop(void) {
         std::cout << "core1 LVGL> engine loop active." << std::endl;
-        draw_vec_t vec;
+        msg_gl_t vec;
 
         while (true) {
             /* Drain all outstanding vector transformations generated from Core 0 */

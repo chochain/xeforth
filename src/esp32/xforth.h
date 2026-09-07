@@ -48,16 +48,16 @@ public:
 /* Raw C linkage wrapper stub matching your eventual low-level token execution files */
 extern "C" {
     void forth_vm(const char *token, xQueGL *out_q) {
-        static const draw_vec_t draw_cmd[] = {
-            { VECTOR_LINE, 10, 10, 200, 10 },
-            { VECTOR_LINE, 200, 10, 200, 200 },
-            { VECTOR_LINE, 200, 200, 10, 10 }
+        static const msg_gl_t gl_cmd[] = {
+            { VECTOR_LINE, 10, 10, 200, 10, "line 0" },
+            { VECTOR_LINE, 200, 10, 200, 200, "line 1" },
+            { VECTOR_LINE, 200, 200, 10, 10, "line 2" }
         };
         static int idx = 0;
         /* If token parsing matches an action, your primitive constructs a graphics packet */
         if (strcmp(token, "LOGO-LINE") == 0) {
             std::cout << "core0 xforth> processing: " << token << std::endl;
-            out_q->send_non_blocking(draw_cmd[idx++]);
+            out_q->send_non_blocking(gl_cmd[idx++]);
         }
     }
 }
@@ -70,7 +70,7 @@ private:
 
     void runInterpreterLoop(void) {
         std::cout << "core0> Forth VM listening pipeline online." << std::endl;
-        que_msg_t rx_msg;
+        msg_web_t rx_msg;
 
         while (true) {
             /* Block indefinitely using 0% host CPU cycles until a web packet lands */
