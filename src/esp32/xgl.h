@@ -21,7 +21,7 @@ class XGL {
 private:
     uint32_t              _width;
     uint32_t              _height;
-    xQueGL                *_gl_q;
+    xQueUI                *_ui;
     TaskHandle_t          _task;
     
     // 📺 Embedded Arduino_GFX Hardware Display Infrastructure Components
@@ -48,13 +48,13 @@ private:
     // Internal hardware initialization method
     void initHardwarePanel();
     void parse(char *cmd);
-    void term_print(const char *text, lv_color_t textColor);
+    void term_print(const char *txt, lv_color_t textColor);
 
 public:
     XGL(uint32_t width = SCREEN_WIDTH, uint32_t height = SCREEN_HEIGHT) :
         _width(width),
         _height(height),
-        _gl_q(NULL),
+        _ui(NULL),
         _task(NULL),
         _bus(NULL),
         _panel(NULL),
@@ -66,7 +66,7 @@ public:
         _cpu_series(NULL),
         _ram_series(NULL) {}
 
-    bool begin(xQueGL *gl_q, int priority);
+    bool begin(xQueUI *ui, int priority);
 };
 
 #else // !(ARDUINO || ESP32)
