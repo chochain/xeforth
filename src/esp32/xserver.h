@@ -17,7 +17,7 @@ private:
     uint16_t       _port;
     const char     *_ssid;
     const char     *_password;
-    xQueWeb        *_out_q;
+    xQueWeb        *_web;
     TaskHandle_t   _task;
     AsyncWebServer _server;          // Direct compilation inclusion
 
@@ -37,12 +37,12 @@ public:
         _ssid(ssid),
         _password(password),
         _port(port),
-        _out_q(NULL),
+        _web(NULL),
         _task(NULL),
         _server(port) {}
 
     // Establishes WiFi parameters and spins up the FreeRTOS background worker
-    bool begin(xQueWeb *web_q, int priority);
+    bool begin(xQueWeb *web, int priority);
 };
 
 #endif // _XSERVER_H
