@@ -107,7 +107,7 @@ private:
     XQueue<RcvT> _q_rcv;
 
 public:
-    XQPair(size_t snd_qsz = 10, size_t rcv_qsz = 10) : _q_snd(snd_qsz), _q_rcv(rcv_qsz) {}
+    XQPair(size_t snd_qsz=10, size_t rcv_qsz=0) : _q_snd(snd_qsz), _q_rcv(rcv_qsz ? rcv_qsz : snd_qsz) {}
 
     bool send(const SndT &item) { return _q_snd.send_non_blocking(item);    }
     bool recv(RcvT &item)       { return _q_rcv.receive_non_blocking(item); }
