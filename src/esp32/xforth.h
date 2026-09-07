@@ -47,8 +47,8 @@ public:
 
 /* Raw C linkage wrapper stub matching your eventual low-level token execution files */
 extern "C" {
-    void forth_vm(const char *token, xQueGL *out_q) {
-        static const msg_gl_t gl_cmd[] = {
+    void forth_vm(const char *token, xQueWeb *web, xQueUI *ui) {
+        static const msg_gui_t ui_cmd[] = {
             { VECTOR_LINE, 10, 10, 200, 10, "line 0" },
             { VECTOR_LINE, 200, 10, 200, 200, "line 1" },
             { VECTOR_LINE, 200, 200, 10, 10, "line 2" }
@@ -57,7 +57,7 @@ extern "C" {
         /* If token parsing matches an action, your primitive constructs a graphics packet */
         if (strcmp(token, "LOGO-LINE") == 0) {
             std::cout << "core0 xforth> processing: " << token << std::endl;
-            out_q->send_non_blocking(gl_cmd[idx++]);
+            ui->send(ui_cmd[idx++]);
         }
     }
 }
@@ -69,30 +69,30 @@ private:
     xQueUI       *_ui;
 
     void runInterpreterLoop(void) {
-        std::cout << "core0> Forth VM listening pipeline online." << std::endl;
-        msg_web_t rx_msg;
+        std::cout << "core0> Forth VM active..." << std::endl;
+        msg_raw_t msg;
 
-        while (true) {
-            /* Block indefinitely using 0% host CPU cycles until a web packet lands */
-            _web->wait_for(rx_msg);
-            std::cout << "core0 xforth> cmd received: " << rx_msg.buf << std::endl;
+        while (1) {
+            while (_web->recv(msg)) {
+                std::cout << "core0 xforth> cmd received: " << msg.buf << std::endl;
 
-            /* Parse text bytes via reentrant thread-safe strtok_r logic matching your hardware architecture */
-            char buf[QUE_BUF_SZ];
-            strncpy(buf, rx_msg.buf, QUE_BUF_SZ);
+                /* Parse text bytes via reentrant thread-safe strtok_r logic matching your hardware architecture */
+                char buf[QUE_BUF_SZ];
+                strncpy(buf, (char*)msg.buf, QUE_BUF_SZ);
             
-            char *save_ptr;
-            char *idiom = strtok_r(buf, " ", &save_ptr);
-            while (idiom != NULL) {
-                forth_vm(idiom, _out_q);
-                idiom = strtok_r(NULL, " ", &save_ptr);
+                char *save_ptr;
+                char *idiom = strtok_r(buf, " ", &save_ptr);
+                while (idiom != NULL) {
+                    forth_vm(idiom, _web, _ui);
+                    idiom = strtok_r(NULL, " ", &save_ptr);
+                }
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
 
 public:
     SimulatedForth(void) : _thread(NULL), _web(NULL), _ui(NULL) {}
-    
     ~SimulatedForth() {
         if (_thread) { delete _thread; }
     }
