@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
         strncpy((char*)req.buf, cmd[i], QUE_BUF_SZ);
     
         /* Blast it into the server queue pipe */
-        if (!web_bridge.post_req(req)) {
+        if (!web_bridge.put_req(req)) {
             std::cout << " send failed: " << cmd[i] << std::endl;
         }
 
