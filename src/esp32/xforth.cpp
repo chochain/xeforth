@@ -1,10 +1,10 @@
 #include "xforth.h"
 
-xQueGL *XForth::_out_q = NULL;
-bool XForth::begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
-    if (in_q == NULL) return false;
-    _in_q  = in_q;
-    _out_q = out_q;
+xQueUI * XForth::_ui = nullptr;
+bool XForth::begin(xQueWeb *web, xQueUI *ui, int priority) {
+    if (web == NULL) return false;
+    _web = web;
+    _ui  = ui;
 
     // 2. Launch the background FreeRTOS execution thread on Core 0
     // We pass "this" (the memory address of this class instance) into the 4th parameter slot!
@@ -23,22 +23,26 @@ bool XForth::begin(xQueWeb *in_q, xQueGL *out_q, int priority) {
 void XForth::runInterpreterLoop() {
     Serial.printf("core%d xforth> Background thread online.\n", _core);
 
-    msg_web_t rx_msg;
+    msg_raw_t web_msg;
+    msg_gui_t gui_msg;
     while (1) {
-        // Wait indefinitely (portMAX_DELAY) using 0% CPU cycles until a packet hits the queue
-        if (xQueueReceive((QueueHandle_t)_in_q, &rx_msg, portMAX_DELAY) == pdTRUE) {
-            Serial.printf("core%d xforth> incoming cmd -> %s\n", _core, rx_msg.buf);
+        while (_web->recv(web_msg)) {
+            Serial.printf("core%d xforth> incoming cmd -> %s\n", _core, web_msg.buf);
             
             // Execute non-fragmenting multi-token text processing
-            parseAndExecuteTokens(rx_msg.buf);
+            parseAndExecuteTokens((char*)web_msg.buf);
+
+            // Brief safety heartbeat yield hook
         }
-        // Brief safety heartbeat yield hook
+        while (_ui->recv(gui_msg)) {
+            // do nothing for now
+        }
         vTaskDelay(_tick);
     }
 }
 
 void XForth::feedback(int len, const char *rst) {
-    static msg_gl_t msg;
+    static msg_gui_t msg;
     Serial.printf("%d> %s", len, rst);
         
     int sz = std::min(len, (QUE_BUF_SZ - 1));
@@ -46,12 +50,12 @@ void XForth::feedback(int len, const char *rst) {
     msg.buf[sz] = '\0';                       /// ensure \0 terminated
     msg.op_code = VECTOR_CMD;
         
-    if (xQueueSend((QueueHandle_t)_out_q, &msg, 0) != pdTRUE) {
+    if (!_ui->send(msg)) {
         Serial.printf("xforth out_q failed on %s\n", rst);
     }
 }
 
-void XForth::parseAndExecuteTokens(char* cmd) {
+void XForth::parseAndExecuteTokens(char *cmd) {
     if (cmd == NULL || strlen(cmd) == 0) return;
 
     forth_vm(cmd, feedback);             /// one-line per call
