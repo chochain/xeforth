@@ -100,29 +100,32 @@ public:
 // ==========================================
 // SHARED CLASS & TYPEDEFS (Works on Both)
 // ==========================================
-template <typename SndT, typename RcvT>
-class XQPair {
+template <typename ReqT, typename RspT>
+class MBox {
 private:
-    XQueue<SndT> _q_snd;
-    XQueue<RcvT> _q_rcv;
+    XQueue<ReqT> _req_q;
+    XQueue<RspT> _rsp_q;
 
 public:
-    XQPair(size_t snd_qsz=10, size_t rcv_qsz=0) : _q_snd(snd_qsz), _q_rcv(rcv_qsz ? rcv_qsz : snd_qsz) {}
+    MBox(size_t req_qsz=10, size_t rsp_qsz=0) : _req_q(req_qsz), _rsp_q(rsp_qsz ? rsp_qsz : req_qsz) {}
 
-    bool send(const SndT &item) { return _q_snd.send_non_blocking(item);    }
-    bool recv(RcvT &item)       { return _q_rcv.receive_non_blocking(item); }
-    void wait_for(RcvT &item)   { _q_rcv.receive_blocking(item);            }
+    bool put_req(const ReqT &item) { return _req_q.send_non_blocking(item);    }
+    bool put_rsp(const RspT &item) { return _rsp_q.send_non_blocking(item);    }
+    bool get_req(ReqT &item)       { return _req_q.receive_non_blocking(item); }
+    bool get_rsp(RspT &item)       { return _rsp_q.receive_non_blocking(item); }
+    void wait_for_req(ReqT &item)   { _req_q.receive_blocking(item);           }
+    void wait_for_rsp(RspT &item)   { _rsp_q.receive_blocking(item);           }
     /* ISR Context API */
-    bool isr_send(const SndT &item, BaseType_t *isr_priority) { 
-        return _q_snd.send_from_isr(item, isr_priority); 
+    bool isr_put_req(const ReqT &item, BaseType_t *isr_priority) { 
+        return _req_q.send_from_isr(item, isr_priority); 
     }
-    bool isr_recv(RcvT &item, BaseType_t *isr_priority) { 
-        return _q_rcv.receive_from_isr(item, isr_priority); 
+    bool isr_get_req(ReqT &item, BaseType_t *isr_priority) { 
+        return _req_q.receive_from_isr(item, isr_priority); 
     }
 };
 
-typedef XQPair<msg_raw_t, msg_raw_t> xQueWeb;
-typedef XQPair<msg_gui_t, msg_gui_t> xQueUI;
+typedef MBox<msg_raw_t, msg_raw_t> xQueWeb;
+typedef MBox<msg_gui_t, msg_gui_t> xQueUI;
 
 #endif // _XQUE_H
 
