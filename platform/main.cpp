@@ -108,14 +108,14 @@ int main(int argc, char *argv[]) {
     };
 
     /* 3. Simulate an HTTP POST action pushing data into the front of the bridge */
-    msg_raw_t post;
+    msg_raw_t req;
     for (int i=0; i < (int)(sizeof(cmd)/sizeof(char*)); i++) {
         std::cout << "\nUser: " << cmd[i] << std::endl;
         
-        strncpy((char*)post.buf, cmd[i], QUE_BUF_SZ);
+        strncpy((char*)req.buf, cmd[i], QUE_BUF_SZ);
     
         /* Blast it into the server queue pipe */
-        if (!web_bridge.send(post)) {
+        if (!web_bridge.post_req(req)) {
             std::cout << " send failed: " << cmd[i] << std::endl;
         }
 
@@ -123,6 +123,10 @@ int main(int argc, char *argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
     std::cout << "\nDone! ^C to terminate worker threads..." << std::endl;
-    
+
+    while (1) {
+        /* Keep host process active to trace data conversions outputting live across the threads */
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }        
     return 0;
 }
