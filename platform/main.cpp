@@ -86,15 +86,15 @@ int main(int argc, char *argv[]) {
     std::cout << "=== CONFIGURING LINUX DUAL-CORE THREAD PLUMBING PIPELINES ===" << std::endl;
 
     /* 1. Allocate the communication queues safely on the host system memory map */
-    xQueWeb webToForthQueue(10);
-    xQueGL  forthToLvglQueue(50);
+    xQueWeb web_bridge(10, 50);
+    xQueUI  ui_bridge(10, 10);
 
     /* 2. Instantiate and connect our structural systems */
     SimulatedForth forthEngine;
-    SimulatedLVGL  graphicsEngine;
+    SimulatedUI    graphicsEngine;
 
-    forthEngine.begin(&webToForthQueue, &forthToLvglQueue, 5);
-    graphicsEngine.begin(&forthToLvglQueue, 10);
+    forthEngine.begin(&web_bridge, &ui_bridge, 5);
+    graphicsEngine.begin(&ui_bridge, 10);
 
     /* Give background loops a brief moment to initialize console logs */
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -108,14 +108,16 @@ int main(int argc, char *argv[]) {
     };
 
     /* 3. Simulate an HTTP POST action pushing data into the front of the bridge */
-    msg_web_t mock_post;
+   msg_raw_t post;
     for (int i=0; i < (int)(sizeof(cmd)/sizeof(char*)); i++) {
         std::cout << "\nUser: " << cmd[i] << std::endl;
         
-        strncpy(mock_post.buf, (char*)cmd[i], QUE_BUF_SZ);
+        strncpy((char*)post.buf, cmd[i], QUE_BUF_SZ);
     
         /* Blast it into the server queue pipe */
-        webToForthQueue.send_non_blocking(mock_post);
+        if (!web_bridge.send(post)) {
+            std::cout << " send failed: " << cmd[i] << std::endl;
+        }
 
         /* Keep host process active to trace data conversions outputting live across the threads */
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
