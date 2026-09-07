@@ -111,25 +111,25 @@ void XGL::runRenderLoop() {
     // 1. Fire up your working v8.4 physical panel display driver code
     initHardwarePanel();
 
-    msg_gui_t msg;
+    msg_gui_t req;
     while (1) {
         // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
-        while (_ui->recv(msg)) {
-            switch (msg.op_code) {
+        while (_ui->get_req(gui_req)) {
+            switch (req.op_code) {
             case VECTOR_CLEAR:
                 term_print("clear", lv_color_make(255, 0, 0));
                 break;
             case VECTOR_LINE: {
                 // Map parameters straight to an LVGL v8.4 coordinate array structure
                 lv_point_t pts[2] = {
-                    { msg.x1, msg.y1 },
-                    { msg.x2, msg.y2 }
+                    { req.x1, req.y1 },
+                    { req.x2, req.y2 }
                 };
                 // Direct vector drawing call into our isolated canvas object
                 lv_textarea_add_text(_term_log, "hit here");
             } break;
             case VECTOR_CMD:
-                term_print((char*)msg.buf, lv_color_make(0, 255, 255));
+                term_print((char*)req.buf, lv_color_make(0, 255, 255));
                 break;
             }
         }
