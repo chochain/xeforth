@@ -7,6 +7,8 @@
 
 // 1. Declare the compiled C-array font file asset
 LV_FONT_DECLARE(terminal_mono_14);
+//#define LV_FONT_UNSCII_8  1
+//#define LV_FONT_UNSCII_16 1
 
 // Example callback function required by LVGL to flush compiled frame buffers to the display
 void my_disp_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
@@ -55,10 +57,9 @@ void my_touchpad_read(lv_indev_drv_t *touch_drv, lv_indev_data_t *data) {
     }
 }
 
-//bool XGL::begin(xQueGL *vec_q, int priority) {
-bool XGL::begin(xQueGL *gl_q, int priority) {
-    if (gl_q == NULL) return false;
-    _gl_q = gl_q;
+bool XGL::begin(xQueUI *ui, int priority) {
+    if (ui == NULL) return false;
+    _ui = ui;
 
     // Launch the background FreeRTOS execution thread pinned strictly to CORE 1
     // We pass "this" into the 4th parameter slot to bridge the class context natively.
@@ -75,11 +76,11 @@ bool XGL::begin(xQueGL *gl_q, int priority) {
 }
 
 // Thread-safe terminal stream printer
-void XGL::term_print(const char *text, lv_color_t textColor) {
-    Serial.printf("xgl >> %s", text);
+void XGL::term_print(const char *txt, lv_color_t textColor) {
+    Serial.printf("xgl >> %s", txt);
     
     // Append text to terminal object canvas
-    lv_textarea_add_text(_term_log, text);
+    lv_textarea_add_text(_term_log, txt);
     
     // Auto-scroll logic: lock view frame to bottom lines
     uint32_t txt_len = strlen(lv_textarea_get_text(_term_log));
@@ -110,10 +111,10 @@ void XGL::runRenderLoop() {
     // 1. Fire up your working v8.4 physical panel display driver code
     initHardwarePanel();
 
-    msg_gl_t  msg;
+    msg_gui_t msg;
     while (1) {
         // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
-        while (xQueueReceive((QueueHandle_t)_gl_q, &msg, 0) == pdTRUE) {
+        while (_ui->recv(msg)) {
             switch (msg.op_code) {
             case VECTOR_CLEAR:
                 term_print("clear", lv_color_make(255, 0, 0));
@@ -128,7 +129,7 @@ void XGL::runRenderLoop() {
                 lv_textarea_add_text(_term_log, "hit here");
             } break;
             case VECTOR_CMD:
-                term_print(msg.buf, lv_color_make(0, 255, 255));
+                term_print((char*)msg.buf, lv_color_make(0, 255, 255));
                 break;
             }
         }
@@ -264,6 +265,7 @@ void XGL::initHardwarePanel() {
     lv_obj_set_size(_term_log, _width - 20, 290);
     lv_obj_align(_term_log, LV_ALIGN_BOTTOM_MID, 0, -10);
     lv_obj_set_style_text_font(_term_log, &terminal_mono_14, 0);             /// set monospace font
+//    lv_obj_set_style_text_font(_term_log, &lv_font_unscii_8, 0);             /// set monospace font
     
     // Force a classic retro-monospaced terminal color layout
     lv_obj_set_style_bg_color(_term_log, lv_color_make(5, 6, 8), 0);
