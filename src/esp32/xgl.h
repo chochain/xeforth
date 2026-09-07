@@ -84,7 +84,7 @@ private:
 
         while (true) {
             /* Drain all outstanding vector transformations generated from Core 0 */
-            while (_ui->recv(msg)) {
+            while (_ui->get_req(msg)) {
                 if (msg.op_code == VECTOR_LINE) {
                     /* This is where your Linux SDL2/SDL3 canvas plotting routine inserts */
                     std::cout << "🎨 core1 UI>: render ("

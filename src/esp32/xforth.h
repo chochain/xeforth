@@ -57,7 +57,7 @@ extern "C" {
         /* If token parsing matches an action, your primitive constructs a graphics packet */
         if (strcmp(token, "LOGO-LINE") == 0) {
             std::cout << "core0 xforth> processing: " << token << std::endl;
-            ui->send(ui_cmd[idx++]);
+            ui->put_req(ui_cmd[idx++]);
         }
     }
 }
@@ -73,7 +73,7 @@ private:
         msg_raw_t msg;
 
         while (1) {
-            while (_web->recv(msg)) {
+            while (_web->get_req(msg)) {
                 std::cout << "core0 xforth> cmd received: " << msg.buf << std::endl;
 
                 /* Parse text bytes via reentrant thread-safe strtok_r logic matching your hardware architecture */
@@ -87,7 +87,8 @@ private:
                     idiom = strtok_r(NULL, " ", &save_ptr);
                 }
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+            std::cout << "_F";
         }
     }
 
