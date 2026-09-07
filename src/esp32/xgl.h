@@ -73,23 +73,23 @@ public:
 #include <thread>
 #include <iostream>
 
-class SimulatedLVGL {
+class SimulatedUI {
 private:
     std::thread *_thread;
-    xQueGL      *_vec_q;
+    xQueUI      *_ui;
 
     void runRenderLoop(void) {
-        std::cout << "core1 LVGL> engine loop active." << std::endl;
-        msg_gl_t vec;
+        std::cout << "core1> UI engine active..." << std::endl;
+        msg_gui_t msg;
 
         while (true) {
             /* Drain all outstanding vector transformations generated from Core 0 */
-            while (_vec_q->receive_non_blocking(vec)) {
-                if (vec.op_code == VECTOR_LINE) {
+            while (_ui->recv(msg)) {
+                if (msg.op_code == VECTOR_LINE) {
                     /* This is where your Linux SDL2/SDL3 canvas plotting routine inserts */
-                    std::cout << "🎨 core1 LVGL>: render ("
-                              << vec.x1 << "," << vec.y1 << ") to ("
-                              << vec.x2 << "," << vec.y2 << ")" << std::endl;
+                    std::cout << "🎨 core1 UI>: render ("
+                              << msg.x1 << "," << msg.y1 << ") to ("
+                              << msg.x2 << "," << msg.y2 << ")" << std::endl;
                 }
             }
 
@@ -99,15 +99,15 @@ private:
     }
 
 public:
-    SimulatedLVGL(void) : _thread(NULL), _vec_q(NULL) {}
+    SimulatedUI(void) : _thread(NULL), _ui(NULL) {}
     
-    ~SimulatedLVGL() {
+    ~SimulatedUI() {
         if (_thread) { delete _thread; }
     }
 
-    bool begin(xQueGL *vec_q, int priority) {
-        _vec_q = vec_q;
-        _thread = new std::thread(&SimulatedLVGL::runRenderLoop, this);
+    bool begin(xQueUI *ui, int priority) {
+        _ui = ui;
+        _thread = new std::thread(&SimulatedUI::runRenderLoop, this);
         _thread->detach();
 
         return true;
