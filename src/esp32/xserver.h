@@ -29,8 +29,9 @@ private:
     }
 
     // internal worker functions handles the actual execution logic
-    BaseType_t parse(std::string_view view, std::string_view delim = "\n");
-    void       runServerLoop();
+    bool parse_req(String cmd);
+    void process(AsyncWebServerRequest *req);
+    void runServerLoop();
 
 public:
     XServer(const char* ssid, const char* password, uint16_t port = 80) :
