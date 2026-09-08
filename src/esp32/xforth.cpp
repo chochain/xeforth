@@ -47,8 +47,8 @@ void XForth::feedback(int len, const char *rst) {
         
     int sz = std::min(len, (QUE_BUF_SZ - 1));
     memcpy(gui_req.buf, rst, sz);             /// leave last byte to
-    msg.buf[sz] = '\0';                       /// ensure \0 terminated
-    msg.op_code = VECTOR_CMD;
+    gui_req.buf[sz] = '\0';                       /// ensure \0 terminated
+    gui_req.op_code = VECTOR_CMD;
         
     if (!_ui->put_req(gui_req)) {
         Serial.printf("xforth out_q failed on %s\n", rst);
