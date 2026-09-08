@@ -111,7 +111,9 @@ bool XServer::begin(xQueWeb *web, int priority) {
     return (xReturned == pdPASS);
 }
 
-BaseType_t XServer::parse(std::string_view view, std::string_view delim) {
+bool XServer::parse_req(String str) {
+    std::string_view view(str.c_str(), str.length());
+    std::string_view delim("\n");
     size_t    start = 0;
     msg_raw_t req;
 
@@ -137,6 +139,7 @@ BaseType_t XServer::parse(std::string_view view, std::string_view delim) {
             
             if (!_web->put_req(req)) {
                 Serial.printf("_web->put_req failed: %s\n", (char*)req.buf);
+                return false;
             }
         }
 
@@ -144,7 +147,36 @@ BaseType_t XServer::parse(std::string_view view, std::string_view delim) {
         if (end == std::string_view::npos) break;
         start = end + 1;
     }
-    return pdTRUE;
+    return true;
+}
+
+void XServer::process(AsyncWebServerRequest *req) {
+    const AsyncWebParameter* p = req->getParam("forth_code", true);
+    if (!p) {
+        req->send(400, "text/plain", "Bad Parameters");
+        return;
+    }
+    if (parse_req(p->value())) {
+#if 0        
+        AsyncWebServerResponse *rsp = req->beginChunkedResponse(
+            "text/plain",
+            [](uint8_t *buf, size_t max, size_t idx) -> size_t {
+                msg_raw_t msg;
+                if (_web->get_rsp(msg)) {
+                    size_t bsz = strlen((char*)msg.buf);
+                    if (bsz==1 && msg.buf[0]==0x3) return 0;
+                    strncpy(buf, msg.buf, bsz);
+                    return bsz;
+                }
+                return RESPONSE_TRY_AGAIN;   // queue is dry, but Forth hasn't done yet, yield Core0 safely
+            });
+        req->send(200, rsp);
+#endif
+        req->send(200, "text/plain", "Queued");
+    }
+    else {
+        req->send(500, "text/plain", "Queue Buffer Full Error");
+    }
 }
 
 void XServer::runServerLoop() {
@@ -161,38 +193,18 @@ void XServer::runServerLoop() {
                   WiFi.localIP().toString().c_str());
 
     // Route A: Serve the UI Dashboard Home Page
-    _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req){
+    _server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
         req->send_P(200, "text/html", HTML_INDEX);
     });
-
     // Route B: Handle Incoming Async Data Submissions
-    // Using a C++ lambda expression that captures the 'this' instance context pointer cleanly via [this]
-    _server.on("/execute", HTTP_POST, [this](AsyncWebServerRequest *req){
-        if (!req->hasParam("forth_code", true)) {
-            req->send(400, "text/plain", "Bad Parameters");
-            return;
-        }
-        const AsyncWebParameter* p = req->getParam("forth_code", true);
-
-        String str = p->value();
-        
-        std::string_view view(str.c_str(), str.length());
-        if (parse(view, "\n") == pdTRUE) {
-            req->send(200, "text/plain", "Queued.");
-        }
-        else {
-            req->send(500, "text/plain", "Queue Buffer Full Error");
-        }
+    _server.on("/execute", HTTP_POST, [this](AsyncWebServerRequest *req) {
+        this->process(req);
     });
-
+    
     // Start server. It binds system network handles to background core interrupts.
     _server.begin();
 
-    msg_raw_t rsp;
     while (1) {
-        while (_web->get_rsp(rsp)) {
-            /// do nothing for now
-        }
         // Core HTTP events are handled in the background via hardware network interrupts,
         // so this main thread loop sleeps deeply to let other Core 0 tasks execute.
         vTaskDelay(pdMS_TO_TICKS(1000));
