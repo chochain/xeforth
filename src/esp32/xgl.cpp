@@ -114,7 +114,7 @@ void XGL::runRenderLoop() {
     msg_gui_t req;
     while (1) {
         // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
-        while (_ui->get_req(gui_req)) {
+        while (_ui->get_req(req)) {
             switch (req.op_code) {
             case VECTOR_CLEAR:
                 term_print("clear", lv_color_make(255, 0, 0));
