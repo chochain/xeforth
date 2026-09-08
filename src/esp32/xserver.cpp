@@ -113,7 +113,7 @@ bool XServer::begin(xQueWeb *web, int priority) {
 
 BaseType_t XServer::parse(std::string_view view, std::string_view delim) {
     size_t    start = 0;
-    msg_raw_t msg;
+    msg_raw_t req;
 
     while (start < view.size()) {
         // 1. Skip leading delimiters
@@ -130,14 +130,14 @@ BaseType_t XServer::parse(std::string_view view, std::string_view delim) {
 
         if (!token.empty()) {
             size_t sz = std::min(token.size(), (size_t)(QUE_BUF_SZ - 1));
-            memcpy(msg.buf, token.data(), sz);        /// leave last byte to
-            msg.buf[sz] = '\0';                       /// ensure \0 terminated
+            memcpy(req.buf, token.data(), sz);        /// leave last byte to
+            req.buf[sz] = '\0';                       /// ensure \0 terminated
 
-            BaseType_t rst = _web->send(msg);
-            if (rst != pdTRUE) return rst;
-            // 4. Do your work with the token
-            // You can print it directly because C++ streams understand string_view length!
-            Serial.println(token.data()); // Or use Serial.printf("%.*s\n", (int)token.size(), token.data());
+            Serial.printf("%.*s\n", (int)token.size(), token.data());
+            
+            if (!_web->put_req(req)) {
+                Serial.printf("_web->put_req failed: %s\n", (char*)req.buf);
+            }
         }
 
         // Move past the current token
@@ -188,9 +188,9 @@ void XServer::runServerLoop() {
     // Start server. It binds system network handles to background core interrupts.
     _server.begin();
 
-    msg_raw_t msg;
+    msg_raw_t rsp;
     while (1) {
-        while (_web->recv(msg)) {
+        while (_web->get_rsp(rsp)) {
             /// do nothing for now
         }
         // Core HTTP events are handled in the background via hardware network interrupts,
