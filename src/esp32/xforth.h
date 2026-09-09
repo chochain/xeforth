@@ -63,27 +63,35 @@ private:
     xQueWeb      *_web;
     xQueUI       *_ui;
 
+    void outer(uint32_t id, char *cmd) {
+        char *save_ptr;
+        char *idiom = strtok_r(cmd, " ", &save_ptr);
+        while (idiom != NULL) {
+            forth_vm(idiom, _web, _ui);
+            idiom = strtok_r(NULL, " ", &save_ptr);
+        }
+    }
+
+    void handle_web_req() {
+        msg_web_t msg;
+        int       id = 0;
+        while (_web->get_req(msg)) {
+            std::cout << "core0 xforth> cmd received: " << msg.buf << std::endl;
+
+            /* Parse text bytes via reentrant thread-safe strtok_r logic matching your hardware architecture */
+            char buf[QUE_BUF_SZ];
+            strncpy(buf, (char*)msg.buf, QUE_BUF_SZ);
+            
+            outer(++id, buf);
+        }
+    }
+
     void run(void) {
         std::cout << "core0> Forth VM active..." << std::endl;
-        msg_web_t msg;
 
         while (1) {
-            while (_web->get_req(msg)) {
-                std::cout << "core0 xforth> cmd received: " << msg.buf << std::endl;
-
-                /* Parse text bytes via reentrant thread-safe strtok_r logic matching your hardware architecture */
-                char buf[QUE_BUF_SZ];
-                strncpy(buf, (char*)msg.buf, QUE_BUF_SZ);
-            
-                char *save_ptr;
-                char *idiom = strtok_r(buf, " ", &save_ptr);
-                while (idiom != NULL) {
-                    forth_vm(idiom, _web, _ui);
-                    idiom = strtok_r(NULL, " ", &save_ptr);
-                }
-            }
+            handle_web_req();
             std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-            std::cout << "_F";
         }
     }
 
