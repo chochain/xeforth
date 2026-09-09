@@ -9,31 +9,26 @@ extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
 
 class XForth {
 private:
-    static xQueUI *_ui;                   ///< _ui  message bridge
+    static xQueUI  *_ui;                  ///< _ui  message bridge
+    static xQueWeb *_web;                 ///< _web message bridge
     uint32_t     _core;                   ///< core id
     TaskHandle_t _task;                   ///< task id
     uint32_t     _tick;                   ///< heartbeat_delay_ms
-    xQueWeb      *_web;                   ///< _web message bridge
 
-    // 🚨 FreeRTOS tasks inside classes MUST be declared as "static void"
-    static void vTaskForthBridge(void *pv) {
-        // Cast the generic void pointer directly back into a class instance context
-        XForth *vm = (XForth*)pv;
-        vm->runInterpreterLoop();
-    }
     static void feedback(int i, const char *rst);
 
-    // This internal worker function handles the actual execution logic
-    void runInterpreterLoop();
-    
     // Thread-safe internal helper to tokenize and split compound string buffers
-    void parseAndExecuteTokens(char *cmd);
+    void outer(uint32_t id, char *cmd);
+    
+    // This internal worker function handles the actual execution logic
+    void handle_web_req();
+    void handle_ui_rsp();
+    void run();
 
 public:
     XForth(uint32_t id, uint32_t heartbeat_ms) : 
         _core(id), 
         _tick(pdMS_TO_TICKS(heartbeat_ms)), 
-        _web(NULL),
         _task(NULL) {}
 
     // Initializes internal configurations and spins up the FreeRTOS worker thread
@@ -68,9 +63,9 @@ private:
     xQueWeb      *_web;
     xQueUI       *_ui;
 
-    void runInterpreterLoop(void) {
+    void run(void) {
         std::cout << "core0> Forth VM active..." << std::endl;
-        msg_raw_t msg;
+        msg_web_t msg;
 
         while (1) {
             while (_web->get_req(msg)) {
