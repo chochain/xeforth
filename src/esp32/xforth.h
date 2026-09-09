@@ -97,7 +97,7 @@ public:
         _web = web;
         _ui  = ui;
         /* Spin up thread execution path using standard object context injection */
-        _thread = new std::thread(&SimulatedForth::runInterpreterLoop, this);
+        _thread = new std::thread(&SimulatedForth::run, this);
         _thread->detach(); /* Run detached in background */
 
         return true;
