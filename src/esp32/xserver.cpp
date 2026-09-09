@@ -96,11 +96,11 @@ window.onload = ()=>forth()
 bool XServer::begin(xQueWeb *web, int priority) {
     if (web == NULL) return false;
     _web = web;
-
+    
     // Launch the background FreeRTOS execution thread on Core 0
     // We pass "this" (the memory address of this class instance) into the 4th parameter slot!
     BaseType_t xReturned = xTaskCreatePinnedToCore(
-        vTaskServerBridge,     // Static function bridge pointer
+        [](void *pv) { static_cast<XServer*>(pv)->run(); },
         "Web_Async_Task",      // Task string identifier name
         4096,                  // Task stack depth allocation (bytes)
         (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE
@@ -111,75 +111,7 @@ bool XServer::begin(xQueWeb *web, int priority) {
     return (xReturned == pdPASS);
 }
 
-bool XServer::parse_req(String str) {
-    std::string_view view(str.c_str(), str.length());
-    std::string_view delim("\n");
-    size_t    start = 0;
-    msg_raw_t req;
-
-    while (start < view.size()) {
-        // 1. Skip leading delimiters
-        start = view.find_first_not_of(delim, start);
-        if (start == std::string_view::npos) break; // Reached the end
-
-        // 2. Find the end of the current token
-        size_t end = view.find_first_of(delim, start);
-
-        // 3. Slice out the token view (non-destructively)
-        std::string_view token = (end == std::string_view::npos) 
-            ? view.substr(start) 
-            : view.substr(start, end - start);
-
-        if (!token.empty()) {
-            size_t sz = std::min(token.size(), (size_t)(QUE_BUF_SZ - 1));
-            memcpy(req.buf, token.data(), sz);        /// leave last byte to
-            req.buf[sz] = '\0';                       /// ensure \0 terminated
-
-            Serial.printf("%.*s\n", (int)token.size(), token.data());
-            
-            if (!_web->put_req(req)) {
-                Serial.printf("_web->put_req failed: %s\n", (char*)req.buf);
-                return false;
-            }
-        }
-
-        // Move past the current token
-        if (end == std::string_view::npos) break;
-        start = end + 1;
-    }
-    return true;
-}
-
-void XServer::process(AsyncWebServerRequest *req) {
-    const AsyncWebParameter* p = req->getParam("forth_code", true);
-    if (!p) {
-        req->send(400, "text/plain", "Bad Parameters");
-        return;
-    }
-    if (parse_req(p->value())) {
-#if 0        
-        AsyncWebServerResponse *rsp = req->beginChunkedResponse(
-            "text/plain",
-            [](uint8_t *buf, size_t max, size_t idx) -> size_t {
-                msg_raw_t msg;
-                if (_web->get_rsp(msg)) {
-                    size_t bsz = strlen((char*)msg.buf);
-                    if (bsz==1 && msg.buf[0]==0x3) return 0;
-                    strncpy(buf, msg.buf, bsz);
-                    return bsz;
-                }
-                return RESPONSE_TRY_AGAIN;   // queue is dry, but Forth hasn't done yet, yield Core0 safely
-            });
-        req->send(200, rsp);
-#endif
-        req->send(200, "text/plain", "Queued");
-    }
-    else {
-        req->send(500, "text/plain", "Queue Buffer Full Error");
-    }
-}
-
-void XServer::runServerLoop() {
+void XServer::setup() {
     WiFi.mode(WIFI_STA);
     Serial.printf("ssid=%s, pw=%s\n", _ssid, _password);
     WiFi.begin(_ssid, _password);
@@ -200,11 +132,149 @@ void XServer::runServerLoop() {
     _server.on("/execute", HTTP_POST, [this](AsyncWebServerRequest *req) {
         this->process(req);
     });
-    
+}
+
+void XServer::process(AsyncWebServerRequest *req) {
+    const AsyncWebParameter* p = req->getParam("forth_code", true);
+    if (!p) {
+        req->send(400, "text/plain", "Bad Parameters");
+        return;
+    }
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    uint32_t   id = ++_tx_id;
+    SessionBuf buf;
+    buf.req       = req;             /// <--- Save the pointer
+    buf.timestamp = millis();        /// set time-to-live
+    _active[id]   = buf;
+    xSemaphoreGive(_mutex);
+
+    AsyncWebServerResponse *rsp = req->beginChunkedResponse(
+        "text/plain", 
+        [this, id](uint8_t *buf, size_t max, size_t index) -> size_t {
+            return this->feed_web_rsp(id, buf, max);
+        });
+
+    // Commit headers out to browser
+    req->send(rsp);
+
+    if (!parse_req(id, (char*)p->value().c_str())) {       /// request buffer full
+        xSemaphoreTake(_mutex, portMAX_DELAY);
+        _active.erase(id);
+        xSemaphoreGive(_mutex);
+    }
+}
+
+bool XServer::parse_req(uint32_t id, char *txt) {
+    std::string_view view(txt, strlen(txt));
+    std::string_view delim("\n");
+    size_t    start = 0;
+    msg_web_t cmd;
+
+    cmd.id = id;
+    while (start < view.size()) {
+        // 1. Skip leading delimiters
+        start = view.find_first_not_of(delim, start);
+        if (start == std::string_view::npos) break; // Reached the end
+
+        // 2. Find the end of the current token
+        size_t end = view.find_first_of(delim, start);
+
+        // 3. Slice out the token view (non-destructively)
+        std::string_view token = (end == std::string_view::npos) 
+            ? view.substr(start) 
+            : view.substr(start, end - start);
+
+        if (!token.empty()) {
+            size_t sz = std::min(token.size(), (size_t)(QUE_BUF_SZ - 1));
+            memcpy(cmd.buf, token.data(), sz);        /// leave last byte to
+            cmd.buf[sz] = '\0';                       /// ensure \0 terminated
+
+            Serial.printf("%.*s\n", (int)token.size(), token.data());
+            
+            if (!_web->put_req(cmd)) {
+                Serial.printf("_web->put_req failed: %s\n", (char*)cmd.buf);
+                return false;
+            }
+        }
+
+        // Move past the current token
+        if (end == std::string_view::npos) break;
+        start = end + 1;
+    }
+    return true;
+}
+
+size_t XServer::feed_web_rsp(uint32_t id, uint8_t *buf, size_t max) {
+    size_t bsz = 0;
+            
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    if (_active.count(id) > 0) {
+        SessionBuf &ses = _active[id];
+            
+        if (ses.available() > 0) bsz = ses.read(buf, max);
+            
+        // ONLY return 0 (EOF) if Forth said it is done AND the buffer is dry
+        if (ses.is_done && ses.available() == 0) {
+            _active.erase(id);
+            bsz = 0;
+        }
+        // CRITICAL: If we have no data right now, but Forth isn't done, 
+        // return a tiny dummy value or a space, OR return 0 but do NOT erase.
+        // To keep the connection alive without closing, we return 0 here safely 
+        // because we will manually wake up the TCP client from the other task.
+    }
+    xSemaphoreGive(_mutex);
+    return bsz;
+}
+
+void XServer::handle_rsp() {
+    msg_web_t msg;
+    while (_web->get_rsp(msg)) {
+        xSemaphoreTake(_mutex, portMAX_DELAY);
+        if (_active.count(msg.id) > 0) {
+            SessionBuf &ses = _active[msg.id];
+                
+            if (msg.eos) ses.is_done = true;           /// move from Forth responses to session buffer
+            else ses.write((const char*)msg.buf, strlen((char*)msg.buf));
+                
+            // --- THE CRITICAL WAKEUP ---
+            // If the TCP client is connected, nudge it to trigger the pull callback again
+            if (ses.req != nullptr &&
+                ses.req->client() != nullptr &&
+                ses.req->client()->connected()) {
+                ses.req->client()->write(NULL, 0);    /// Triggers the network stack to flush/poll
+            }
+        }
+        xSemaphoreGive(_mutex);
+    }
+}
+
+void XServer::check_timeout() {
+    uint32_t now = millis();
+
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    for (auto it = _active.begin(); it != _active.end(); ) {
+        // If request has been waiting longer than 5000ms
+        if ((now - it->second.timestamp) < 5000) ++it;
+        else {
+            // Safely tell the client they timed out and free the connection memory
+            it->second.req->send(504, "text/plain", "Forth execution timeout");
+                
+            // Erase from map safely while iterating
+            it = _active.erase(it);
+        }
+    }
+    xSemaphoreGive(_mutex);
+}
+
+void XServer::run() {
+    setup();
     // Start server. It binds system network handles to background core interrupts.
     _server.begin();
 
     while (1) {
+        handle_rsp();
+//        check_timeout();
         // Core HTTP events are handled in the background via hardware network interrupts,
         // so this main thread loop sleeps deeply to let other Core 0 tasks execute.
         vTaskDelay(pdMS_TO_TICKS(1000));
