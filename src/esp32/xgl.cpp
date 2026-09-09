@@ -25,6 +25,27 @@ void my_disp_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t
     lv_disp_flush_ready(disp_drv);
 }
 
+#if 0
+// Declare a global or static pointer to your LVGL terminal/label widget
+extern lv_obj_t* my_lvgl_console_label; 
+
+void my_lv_ui_updater_cb(void * user_data) {
+    // 1. Cast the raw pointer back to our fixed structure
+    auto* payload = static_cast<lv_ui_update_t*>(user_data);
+    
+    if (payload != nullptr && my_lvgl_console_label != nullptr) {
+        // 2. Perform the UI update safely on the main thread
+        // For example, appending the Forth output text straight to an LVGL text area or label
+        lv_label_ins_text(my_lvgl_console_label, LV_LABEL_POS_LAST, payload->message);
+    }
+    
+    // 3. CRITICAL: Free the structural wrapper block!
+    // Since this memory was allocated dynamically just for the trip between threads,
+    // we must delete it right here once the UI update completes.
+    delete payload; 
+}
+#endif
+
 // Stable Debounced Touchpad Read Callback
 void my_touchpad_read(lv_indev_drv_t *touch_drv, lv_indev_data_t *data) {
     static int last_x = 0;
