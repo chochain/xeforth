@@ -85,7 +85,7 @@ bool XGL::begin(xQueUI *ui, int priority) {
     // Launch the background FreeRTOS execution thread pinned strictly to CORE 1
     // We pass "this" into the 4th parameter slot to bridge the class context natively.
     BaseType_t xReturned = xTaskCreatePinnedToCore(
-        vTaskRenderBridge,     // Static function bridge pointer
+        [](void *pv) { static_cast<XGL*>(pv)->run(); },
         "LVGL_Render_Task",    // Task string identifier name
         8192,                  // Task stack depth allocation (bytes)
         (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE

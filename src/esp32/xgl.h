@@ -38,12 +38,7 @@ private:
     lv_chart_series_t     *_cpu_series;
     lv_chart_series_t     *_ram_series;
 
-    static void vTaskRenderBridge(void *pv) {
-        XGL *gl = (XGL*)pv;
-        gl->runRenderLoop();
-    }
-
-    void runRenderLoop();
+    void run();
     
     // Internal hardware initialization method
     void initHardwarePanel();
@@ -78,7 +73,7 @@ private:
     std::thread *_thread;
     xQueUI      *_ui;
 
-    void runRenderLoop(void) {
+    void run(void) {
         std::cout << "core1> UI engine active..." << std::endl;
         msg_gui_t msg;
 
@@ -107,7 +102,7 @@ public:
 
     bool begin(xQueUI *ui, int priority) {
         _ui = ui;
-        _thread = new std::thread(&SimulatedUI::runRenderLoop, this);
+        _thread = new std::thread(&SimulatedUI::run, this);
         _thread->detach();
 
         return true;
