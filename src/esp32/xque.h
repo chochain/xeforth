@@ -124,7 +124,7 @@ public:
     }
 };
 
-typedef MBox<msg_raw_t, msg_raw_t> xQueWeb;
+typedef MBox<msg_web_t, msg_web_t> xQueWeb;
 typedef MBox<msg_gui_t, msg_gui_t> xQueUI;
 
 #endif // _XQUE_H
