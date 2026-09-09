@@ -108,7 +108,7 @@ int main(int argc, char *argv[]) {
     };
 
     /* 3. Simulate an HTTP POST action pushing data into the front of the bridge */
-    msg_raw_t req;
+    msg_web_t req;
     for (int i=0; i < (int)(sizeof(cmd)/sizeof(char*)); i++) {
         std::cout << "\nUser: " << cmd[i] << std::endl;
         
