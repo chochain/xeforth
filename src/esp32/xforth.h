@@ -57,7 +57,7 @@ extern "C" {
     }
 }
 
-class SimulatedForth {
+class MockForth {
 private:
     std::thread  *_thread;
     xQueWeb      *_web;
@@ -96,8 +96,8 @@ private:
     }
 
 public:
-    SimulatedForth(void) : _thread(NULL), _web(NULL), _ui(NULL) {}
-    ~SimulatedForth() {
+    MockForth(void) : _thread(NULL), _web(NULL), _ui(NULL) {}
+    ~MockForth() {
         if (_thread) { delete _thread; }
     }
 
@@ -105,7 +105,7 @@ public:
         _web = web;
         _ui  = ui;
         /* Spin up thread execution path using standard object context injection */
-        _thread = new std::thread(&SimulatedForth::run, this);
+        _thread = new std::thread(&MockForth::run, this);
         _thread->detach(); /* Run detached in background */
 
         return true;

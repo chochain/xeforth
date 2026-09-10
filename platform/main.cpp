@@ -90,11 +90,11 @@ int main(int argc, char *argv[]) {
     xQueUI  ui_bridge(10);
 
     /* 2. Instantiate and connect our structural systems */
-    SimulatedForth forthEngine;
-    SimulatedUI    graphicsEngine;
+    MockForth mock_forth;
+    MockUI    mock_ui;
 
-    forthEngine.begin(&web_bridge, &ui_bridge, 5);
-    graphicsEngine.begin(&ui_bridge, 10);
+    mock_forth.begin(&web_bridge, &ui_bridge, 5);
+    mock_ui.begin(&ui_bridge, 10);
 
     /* Give background loops a brief moment to initialize console logs */
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

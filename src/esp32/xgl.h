@@ -41,7 +41,7 @@ private:
     void run();
     
     // Internal hardware initialization method
-    void initHardwarePanel();
+    void init_hardware();
     void parse(char *cmd);
     void term_print(const char *txt, lv_color_t textColor);
 
@@ -68,7 +68,7 @@ public:
 #include <thread>
 #include <iostream>
 
-class SimulatedUI {
+class MockUI {
 private:
     std::thread *_thread;
     xQueUI      *_ui;
@@ -94,15 +94,15 @@ private:
     }
 
 public:
-    SimulatedUI(void) : _thread(NULL), _ui(NULL) {}
+    MockUI(void) : _thread(NULL), _ui(NULL) {}
     
-    ~SimulatedUI() {
+    ~MockUI() {
         if (_thread) { delete _thread; }
     }
 
     bool begin(xQueUI *ui, int priority) {
         _ui = ui;
-        _thread = new std::thread(&SimulatedUI::run, this);
+        _thread = new std::thread(&MockUI::run, this);
         _thread->detach();
 
         return true;
