@@ -140,37 +140,45 @@ void XServer::process(AsyncWebServerRequest *req) {
         req->send(400, "text/plain", "Bad Parameters");
         return;
     }
+    Serial.printf("xs#process tid=%d => ", _tx_id);
     xSemaphoreTake(_mutex, portMAX_DELAY);
-    uint32_t   id = ++_tx_id;
+    uint32_t   tid= ++_tx_id;
     SessionBuf buf;
     buf.req       = req;             /// <--- Save the pointer
     buf.timestamp = millis();        /// set time-to-live
-    _active[id]   = buf;
+    _active[tid]  = buf;
+    buf.is_done   = false;
     xSemaphoreGive(_mutex);
+    Serial.printf("_active.count(%d)=%d => ", tid, _active.count(tid));
 
     AsyncWebServerResponse *rsp = req->beginChunkedResponse(
         "text/plain", 
-        [this, id](uint8_t *buf, size_t max, size_t index) -> size_t {
-            return this->feed_web_rsp(id, buf, max);
+        [this, tid](uint8_t *buf, size_t max, size_t index) -> size_t {
+            return this->feed_web_rsp(tid, buf, max);
         });
 
     // Commit headers out to browser
     req->send(rsp);
 
-    if (!parse_req(id, (char*)p->value().c_str())) {       /// request buffer full
+    if (parse_req(tid, (char*)p->value().c_str())) {       /// request buffer full
+        Serial.printf("xs#processe parse_req %d ok\n", tid);
+    }
+    else {
+        Serial.printf("xs#process parse_req %d failed => ", tid);
         xSemaphoreTake(_mutex, portMAX_DELAY);
-        _active.erase(id);
+        _active.erase(tid);
         xSemaphoreGive(_mutex);
+        Serial.printf("_active.count(%d)=%d\n", tid, _active.count(tid));
     }
 }
 
-bool XServer::parse_req(uint32_t id, char *txt) {
+bool XServer::parse_req(uint32_t tid, char *txt) {
     std::string_view view(txt, strlen(txt));
     std::string_view delim("\n");
     size_t    start = 0;
     msg_web_t cmd;
 
-    cmd.id = id;
+    cmd.id = tid;
     while (start < view.size()) {
         // 1. Skip leading delimiters
         start = view.find_first_not_of(delim, start);
@@ -204,32 +212,36 @@ bool XServer::parse_req(uint32_t id, char *txt) {
     return true;
 }
 
-size_t XServer::feed_web_rsp(uint32_t id, uint8_t *buf, size_t max) {
+size_t XServer::feed_web_rsp(uint32_t tid, uint8_t *buf, size_t max) {
     size_t bsz = 0;
             
     xSemaphoreTake(_mutex, portMAX_DELAY);
-    if (_active.count(id) > 0) {
-        SessionBuf &ses = _active[id];
+    if (_active.count(tid) > 0) {
+        SessionBuf &ses = _active[tid];
             
         if (ses.available() > 0) bsz = ses.read(buf, max);
             
         // ONLY return 0 (EOF) if Forth said it is done AND the buffer is dry
         if (ses.is_done && ses.available() == 0) {
-            _active.erase(id);
+            _active.erase(tid);
             bsz = 0;
         }
+        else Serial.printf("xs#feed_web_rsp ses.is_done=%d ses.available()=%d\n", ses.is_done, ses.available());
         // CRITICAL: If we have no data right now, but Forth isn't done, 
         // return a tiny dummy value or a space, OR return 0 but do NOT erase.
         // To keep the connection alive without closing, we return 0 here safely 
         // because we will manually wake up the TCP client from the other task.
     }
+    else Serial.printf("xs#feed_web_rsp _active.count(%d)=%d ", tid, _active.count(tid));
     xSemaphoreGive(_mutex);
+    
     return bsz;
 }
 
 void XServer::handle_rsp() {
     msg_web_t msg;
     while (_web->get_rsp(msg)) {
+        Serial.printf("xserver <<%c [%d]%s ", msg.eos ? 'X' : '+', msg.id, msg.buf);
         xSemaphoreTake(_mutex, portMAX_DELAY);
         if (_active.count(msg.id) > 0) {
             SessionBuf &ses = _active[msg.id];
@@ -239,12 +251,14 @@ void XServer::handle_rsp() {
                 
             // --- THE CRITICAL WAKEUP ---
             // If the TCP client is connected, nudge it to trigger the pull callback again
-            if (ses.req != nullptr &&
-                ses.req->client() != nullptr &&
-                ses.req->client()->connected()) {
+            if (ses.req == nullptr)                   Serial.print("xserver ses.req is NULL");
+            else if (ses.req->client() == nullptr)    Serial.print("xserver ses.req->client() is NULL");
+            else if (!ses.req->client()->connected()) Serial.print("xserver ses.req->client() not connected");
+            else {
                 ses.req->client()->write(NULL, 0);    /// Triggers the network stack to flush/poll
             }
         }
+        else Serial.printf("xs#handle_rsp _active.count(%d)=%d ", msg.id, _active.count(msg.id));
         xSemaphoreGive(_mutex);
     }
 }
