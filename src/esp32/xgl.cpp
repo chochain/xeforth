@@ -128,9 +128,9 @@ void XGL::parse(char *cmd) {
     }
 }
 
-void XGL::runRenderLoop() {
+void XGL::run() {
     // 1. Fire up your working v8.4 physical panel display driver code
-    initHardwarePanel();
+    init_hardware();
 
     msg_gui_t req;
     while (1) {
@@ -182,7 +182,7 @@ void XGL::runRenderLoop() {
     }
 }
 
-void XGL::initHardwarePanel() {
+void XGL::init_hardware() {
     // 1. Initialize the 3-wire SPI Bus used to transmit configuration registers to the ST7701S
     // (Pins vary based on your specific 4848S040 board version - match your working example code)
     _bus = new Arduino_ESP32SPI(
