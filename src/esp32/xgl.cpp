@@ -128,55 +128,65 @@ void XGL::parse(char *cmd) {
     }
 }
 
+void XGL::handle_req() {
+    msg_gui_t req;
+    // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
+    while (_ui->get_req(req)) {
+        switch (req.op_code) {
+        case VECTOR_CLEAR:
+            term_print("clear", lv_color_make(255, 0, 0));
+            break;
+        case VECTOR_LINE: {
+            // Map parameters straight to an LVGL v8.4 coordinate array structure
+            lv_point_t pts[2] = {
+                { req.x1, req.y1 },
+                { req.x2, req.y2 }
+            };
+            // Direct vector drawing call into our isolated canvas object
+            lv_textarea_add_text(_term_log, "hit here");
+        } break;
+        case VECTOR_CMD:
+            term_print((char*)req.buf, lv_color_make(0, 255, 255));
+            break;
+        }
+    }
+}
+
+void XGL::update_chart() {
+    static uint32_t last_tick = 0;
+    static uint32_t live_cpu  = random(15, 65); // Replace with your real runtime metrics
+    static uint32_t live_ram  = random(5, 95);  // map(ESP.getFreeHeap(), 0, 280000, 100, 0); // Inverse map to get usage percentage
+
+    // 2. LIVE TELEMETRY LOG DATA MODULATION (Updates every 50ms)
+    if ((millis() - last_tick) < 50) return;   // 100ms=33%, 50ms=>55%, 20ms=>75% CPU (core1)
+    
+    last_tick = millis();
+    // Shift existing values backward
+    for (int i = 0; i < 29; i++) {
+        _cpu_series->y_points[i] = _cpu_series->y_points[i + 1];
+        _ram_series->y_points[i] = _ram_series->y_points[i + 1];
+    }
+
+    // Fetch actual hardware configurations dynamically
+    live_cpu = (uint32_t)(0.8 * live_cpu + 0.2 * random(15, 65)); // Replace with your real runtime metrics
+    live_ram = (uint32_t)(0.8 * live_ram + 0.2 * random(5, 95));  // map(ESP.getFreeHeap(), 0, 280000, 100, 0); // Inverse map to get usage percentage
+
+    lv_chart_set_value_by_id(_chart, _cpu_series, 29, live_cpu);
+    lv_chart_set_value_by_id(_chart, _ram_series, 29, live_ram);
+    lv_chart_refresh(_chart);
+}    
+
 void XGL::run() {
     // 1. Fire up your working v8.4 physical panel display driver code
     init_hardware();
 
-    msg_gui_t req;
     while (1) {
-        // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
-        while (_ui->get_req(req)) {
-            switch (req.op_code) {
-            case VECTOR_CLEAR:
-                term_print("clear", lv_color_make(255, 0, 0));
-                break;
-            case VECTOR_LINE: {
-                // Map parameters straight to an LVGL v8.4 coordinate array structure
-                lv_point_t pts[2] = {
-                    { req.x1, req.y1 },
-                    { req.x2, req.y2 }
-                };
-                // Direct vector drawing call into our isolated canvas object
-                lv_textarea_add_text(_term_log, "hit here");
-            } break;
-            case VECTOR_CMD:
-                term_print((char*)req.buf, lv_color_make(0, 255, 255));
-                break;
-            }
-        }
-        static uint32_t last_tick = 0;
-        static uint32_t live_cpu  = random(15, 65); // Replace with your real runtime metrics
-        static uint32_t live_ram  = random(5, 95);  // map(ESP.getFreeHeap(), 0, 280000, 100, 0); // Inverse map to get usage percentage
         // 6. Force LVGL to run layout ticks, handle touch states, and pump DMA pixels
         lv_timer_handler();
-
-        // 2. LIVE TELEMETRY LOG DATA MODULATION (Updates every 50ms)
-        if ((millis() - last_tick) > 50) {
-            last_tick = millis();
-            // Shift existing values backward
-            for (int i = 0; i < 29; i++) {
-                _cpu_series->y_points[i] = _cpu_series->y_points[i + 1];
-                _ram_series->y_points[i] = _ram_series->y_points[i + 1];
-            }
-
-            // Fetch actual hardware configurations dynamically
-            live_cpu = (uint32_t)(0.8 * live_cpu + 0.2 * random(15, 65)); // Replace with your real runtime metrics
-            live_ram = (uint32_t)(0.8 * live_ram + 0.2 * random(5, 95));  // map(ESP.getFreeHeap(), 0, 280000, 100, 0); // Inverse map to get usage percentage
-
-            lv_chart_set_value_by_id(_chart, _cpu_series, 29, live_cpu);
-            lv_chart_set_value_by_id(_chart, _ram_series, 29, live_ram);
-            lv_chart_refresh(_chart);
-        }
+        
+        handle_req();
+        update_chart();
+        
         // 7. Yield to feed the Core 1 FreeRTOS hardware watchdog timers
         vTaskDelay(pdMS_TO_TICKS(10));
     }

@@ -42,6 +42,8 @@ private:
     
     // Internal hardware initialization method
     void init_hardware();
+    void handle_req();
+    void update_chart();
     void parse(char *cmd);
     void term_print(const char *txt, lv_color_t textColor);
 
