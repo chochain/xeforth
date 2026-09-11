@@ -98,7 +98,7 @@ bool XGL::begin(xQueUI *ui, int priority) {
 
 // Thread-safe terminal stream printer
 void XGL::term_print(const char *txt, lv_color_t textColor) {
-    Serial.printf("xgl >> %s", txt);
+    Serial.printf("    xgl#term_log <<+ '%s' ", txt);
     
     // Append text to terminal object canvas
     lv_textarea_add_text(_term_log, txt);
@@ -149,6 +149,7 @@ void XGL::handle_req() {
             term_print((char*)req.buf, lv_color_make(0, 255, 255));
             break;
         }
+        Serial.printf("    xgl#handle_req << '%s' ", (char*)req.buf);
     }
 }
 
