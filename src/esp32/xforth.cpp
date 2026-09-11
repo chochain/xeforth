@@ -27,7 +27,7 @@ void XForth::handle_web_req() {
     while (_web->get_req(req)) {
         _req_id = req.id;      // capture session id, CC:DEBUG static => dynamic
         char *cmd = (char*)req.buf;
-        Serial.printf("  xforth << req[%d] '%s'\n", req.id, cmd);
+        Serial.printf("  xforth << req[%d]'%s'\n", req.id, cmd);
             
         // Execute non-fragmenting multi-token text processing
         forth_vm(cmd, feedback);
