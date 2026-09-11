@@ -1,7 +1,8 @@
 #include "xforth.h"
 
-xQueWeb *XForth::_web = nullptr;
-xQueUI  *XForth::_ui  = nullptr;
+xQueWeb  *XForth::_web   = nullptr;
+xQueUI   *XForth::_ui    = nullptr;
+uint32_t XForth::_req_id = 0;
 bool XForth::begin(xQueWeb *web, xQueUI *ui, int priority) {
     if (web == NULL) return false;
     _web = web;
@@ -24,11 +25,12 @@ bool XForth::begin(xQueWeb *web, xQueUI *ui, int priority) {
 void XForth::handle_web_req() {
     msg_web_t req;
     while (_web->get_req(req)) {
+        _req_id = req.id;      // capture session id, CC:DEBUG static => dynamic
         char *cmd = (char*)req.buf;
-        Serial.printf("core%d xforth> incoming cmd -> %s\n", _core, cmd);
+        Serial.printf("  xforth << req[%d] '%s'\n", req.id, cmd);
             
         // Execute non-fragmenting multi-token text processing
-        forth_vm(cmd, feedback);             /// one-line per call
+        forth_vm(cmd, feedback);
         
         // CC:Brief safety heartbeat yield hook
     }
@@ -44,7 +46,7 @@ void XForth::handle_ui_rsp() {
 }
 
 void XForth::run() {
-    Serial.printf("core%d xforth> Background thread online.\n", _core);
+    Serial.printf("xforth task=%d> Background thread online.\n", _core);
 
     while (1) {
         handle_web_req();
@@ -57,7 +59,7 @@ void XForth::feedback(int len, const char *rst) {
     static msg_gui_t gui_req;
     static msg_web_t web_rsp;
     
-    Serial.printf("%d> %s", len, rst);
+    Serial.printf("  xforth#feedback[%d]>> <%d>'%s'", _req_id, len, rst);
         
     int sz = std::min(len, (QUE_BUF_SZ - 1));
     memcpy(gui_req.buf, rst, sz);             /// leave last byte to
@@ -65,14 +67,15 @@ void XForth::feedback(int len, const char *rst) {
     gui_req.op_code = VECTOR_CMD;
     
     if (!_ui->put_req(gui_req)) {
-        Serial.printf("xforth gui_req failed on %s\n", rst);
+        Serial.printf("xforth#gui_req failed on %s\n", rst);
     }
     memcpy(web_rsp.buf, rst, sz);             /// leave last byte to
     web_rsp.buf[sz] = '\0';                   /// ensure \0 terminated
+    web_rsp.id      = _req_id;
     web_rsp.eos     = false;
         
     if (!_web->put_rsp(web_rsp)) {
-        Serial.printf("xforth web_rsp failed on %s\n", rst);
+        Serial.printf("xforth#web_rsp failed on %s\n", rst);
     }
 }
 
@@ -87,7 +90,7 @@ void XForth::outer(uint32_t id, char *cmd) {  /// not used, call forth_vm direct
     while (idiom != NULL) {
         // Pass individual parsed tokens directly to your low-level C engine
         // by referencing their raw memory string pointers
-        Serial.printf("forth << %s\n", idiom);
+        Serial.printf("  xforth << %s\n", idiom);
         
         // Seek out the next individual space-separated command segment
         idiom = strtok_r(NULL, " ", &save_ptr);
