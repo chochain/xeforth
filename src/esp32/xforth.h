@@ -9,11 +9,12 @@ extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
 
 class XForth {
 private:
-    static xQueUI  *_ui;                  ///< _ui  message bridge
-    static xQueWeb *_web;                 ///< _web message bridge
-    uint32_t     _core;                   ///< core id
-    TaskHandle_t _task;                   ///< task id
-    uint32_t     _tick;                   ///< heartbeat_delay_ms
+    static xQueUI   *_ui;                  ///< _ui  message bridge
+    static xQueWeb  *_web;                 ///< _web message bridge
+    static uint32_t _req_id;
+    uint32_t        _core;                 ///< core id
+    TaskHandle_t    _task;                 ///< task id
+    uint32_t        _tick;                 ///< heartbeat_delay_ms
 
     static void feedback(int i, const char *rst);
 
