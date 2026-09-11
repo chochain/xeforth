@@ -149,27 +149,25 @@ void XServer::process(AsyncWebServerRequest *req) {
     _active[tid]  = buf;
     buf.is_done   = false;
     xSemaphoreGive(_mutex);
-    Serial.printf("_active.count(%d)=%d => ", tid, _active.count(tid));
 
     AsyncWebServerResponse *rsp = req->beginChunkedResponse(
         "text/plain", 
         [this, tid](uint8_t *buf, size_t max, size_t index) -> size_t {
-            return this->feed_web_rsp(tid, buf, max);
+            return this->feed_web_rsp(tid, buf, max);      /// callback handler
         });
 
     // Commit headers out to browser
-    req->send(rsp);
+    req->send(rsp);                                        /// set response handler
 
-    if (parse_req(tid, (char*)p->value().c_str())) {       /// request buffer full
-        Serial.printf("xs#processe parse_req %d ok\n", tid);
-    }
-    else {
-        Serial.printf("xs#process parse_req %d failed => ", tid);
+    Serial.printf("xs#process _active=%d << req[%d] %s => ",
+                  _active.count(tid), tid, (char*)p->value().c_str());
+    if (!parse_req(tid, (char*)p->value().c_str())) {      /// request buffer full
         xSemaphoreTake(_mutex, portMAX_DELAY);
         _active.erase(tid);
         xSemaphoreGive(_mutex);
-        Serial.printf("_active.count(%d)=%d\n", tid, _active.count(tid));
+        Serial.printf("failed _active.count(%d)=%d", tid, _active.count(tid));
     }
+    Serial.printf("\n");
 }
 
 bool XServer::parse_req(uint32_t tid, char *txt) {
@@ -197,10 +195,11 @@ bool XServer::parse_req(uint32_t tid, char *txt) {
             memcpy(cmd.buf, token.data(), sz);        /// leave last byte to
             cmd.buf[sz] = '\0';                       /// ensure \0 terminated
 
-            Serial.printf("%.*s\n", (int)token.size(), token.data());
-            
-            if (!_web->put_req(cmd)) {
-                Serial.printf("_web->put_req failed: %s\n", (char*)cmd.buf);
+            if (_web->put_req(cmd)) {
+                 Serial.printf(" >> [%d]'%s' ", (int)sz, (char*)cmd.buf);
+            }
+            else {
+                Serial.printf("_web->put_req failed: '%s'\n", (char*)cmd.buf);
                 return false;
             }
         }
@@ -222,11 +221,11 @@ size_t XServer::feed_web_rsp(uint32_t tid, uint8_t *buf, size_t max) {
         if (ses.available() > 0) bsz = ses.read(buf, max);
             
         // ONLY return 0 (EOF) if Forth said it is done AND the buffer is dry
+//        Serial.printf("xs#feed_web_rsp ses.is_done=%d ses.available()=%d\n", ses.is_done, ses.available());
         if (ses.is_done && ses.available() == 0) {
             _active.erase(tid);
             bsz = 0;
         }
-        else Serial.printf("xs#feed_web_rsp ses.is_done=%d ses.available()=%d\n", ses.is_done, ses.available());
         // CRITICAL: If we have no data right now, but Forth isn't done, 
         // return a tiny dummy value or a space, OR return 0 but do NOT erase.
         // To keep the connection alive without closing, we return 0 here safely 
@@ -241,7 +240,7 @@ size_t XServer::feed_web_rsp(uint32_t tid, uint8_t *buf, size_t max) {
 void XServer::handle_rsp() {
     msg_web_t msg;
     while (_web->get_rsp(msg)) {
-        Serial.printf("xserver <<%c [%d]%s ", msg.eos ? 'X' : '+', msg.id, msg.buf);
+        Serial.printf("xs#handle_rsp <<%c [%d]'%s' ", msg.eos ? 'X' : '+', msg.id, (char*)msg.buf);
         xSemaphoreTake(_mutex, portMAX_DELAY);
         if (_active.count(msg.id) > 0) {
             SessionBuf &ses = _active[msg.id];
@@ -258,7 +257,7 @@ void XServer::handle_rsp() {
                 ses.req->client()->write(NULL, 0);    /// Triggers the network stack to flush/poll
             }
         }
-        else Serial.printf("xs#handle_rsp _active.count(%d)=%d ", msg.id, _active.count(msg.id));
+        else Serial.printf("xs#handle_rsp %d not active ", msg.id);
         xSemaphoreGive(_mutex);
     }
 }
