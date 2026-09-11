@@ -12,85 +12,48 @@ Transfer-Encoding: chunked
 
 )XX";
 
-#if 0
-// Embed the responsive HTML interface cleanly inside the flash layout space
-const char HTML_INDEX[] PROGMEM = R"XX(
-<!DOCTYPE html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Forth Console</title>
-<style>
-  body     { font-family:monospace; background:#1a1a1a; color:#00ff00; padding:20px; }
-  textarea { width:100%; height:120px; background:#000; color:#00ff00; border:1px solid #00ff00; padding:10px; font-size:16px; box-sizing:border-box; }
-  button   { background:#00ff00; color:#000; border:none; padding:12px; font-weight:bold; cursor:pointer; margin-top:10px; width:100%; font-size:16px; }
-</style></head>
-<body>
-  <h2>FORTH PIPELINE</h2>
-  <textarea id="code" placeholder="Enter commands..."></textarea>
-  <button onclick="send()">EXECUTE</button>
-  <script>
-    function send() {
-      let f=new FormData();
-      f.append("forth_code", document.getElementById("code").value);
-      fetch('/execute',{ method:'POST',body:f })
-      .then(r=>r.text())
-      .then(d=>console.log(d));
-    }
-  </script>
-</body></html>
-)XX";
-#endif
-
-// Embed the HTML code cleanly as a static string block
-const char *HTML_INDEX PROGMEM = R"XX(
-HTTP/1.1 200 OK
-Content-type:text/html
-
+// Embed the HTMX-driven HTML interface cleanly inside the flash space
+const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 <html>
 <head>
-  <meta charset='UTF-8'><title>xeForth on ESP32</title>
-  <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
-  <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
-  <style>body{font-family:'Courier New',monospace;font-size:14px;}</style>
+  <!-- 1. Enforce encoding immediately at the absolute start of the head block -->
+  <meta charset='UTF-8'>
+  <title>xeForth Mainframe Panel</title>
+  
+  <!-- 2. Point to the official, explicit package distribution destination -->
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- script src="https://unpkg.com"></script -->
+  
+  <style>
+    body { font-family:'Courier New', monospace; font-size:14px; background:#121212; color:#00ff00; padding:10px; margin:0; }
+    #container { display: flex; height: 95vh; }
+    #log { flex: 0 0 60%; background-color:#1a1a1a; border: 1px solid #333; overflow-y:auto; padding:10px; box-sizing:border-box; }
+    #tib-form { flex: 0 0 40%; display: flex; flex-direction: column; }
+    #tib { flex: 1; background:#000; color:#00ff00; border:1px solid #333; resize:none; padding:10px; font-family:inherit; font-size:inherit; }
+    .cmd-entry { color: #00bcff; margin-top: 5px; }
+    .rsp-entry { color: #00ff00; white-space: pre-wrap; }
+  </style>
 </head>
 <body>
-    <div id='log' style='float:left;overflow:auto;height:100%;width:60%;
-         background-color:#f8f0f0;'>xeForth 1.0</div>
-    <textarea id='tib' style='height:100%;width:40%;resize:none'
-        onkeydown='if (13===event.keyCode) forth()'></textarea>
-</body>
-<script>
-let log = document.getElementById('log')
-let tib = document.getElementById('tib')
-let idx = 0
-function send_post(url, ary) {
-    let id  = '_'+(idx++).toString()
-    let cmd = '\n---CMD'+id+'\n'
-    let req = ary.slice(0,30).join('\n')
-    let frm = new FormData()
-    frm.append('forth_code', req)
-    log.innerHTML += '<div id='+id+'><font color=blue>'+
-                     req.replace(/\n/g,'<br/>')+'</font><br/></div>'
-    fetch(url, {
-        method: 'POST', headers: { 'Context-Type': 'text/plain' },
-        body: frm
-    })
-    .then(rsp=>rsp.text())
-    .then(txt=>{
-        document.getElementById(id).innerHTML +=
-            txt.replace(/\n/g,'<br/>').replace(/\s/g,'&nbsp;')
-        log.scrollTop=log.scrollHeight
-        ary.splice(0,30)
-        if (ary.length > 0) send_post(url, ary)
-    })
-}
-function forth() {
-    let ary = tib.value.split('\n')
-    if (ary.length > 0) send_post('/execute', ary)
-    tib.value = ''; tib.focus(); return false
-}
-window.onload = ()=>forth()
-</script></html>
+    <div id='container'>
+        <div id='log'>xeForth Mainframe Initialized...<br/></div>
 
+        <form id='tib-form' 
+           hx-post='/execute' 
+           hx-target='#log' 
+           hx-swap='beforeend'
+           onsubmit="document.getElementById('log').innerHTML += '<div class=\'cmd-entry\'>&gt; ' + document.getElementById('tib').value.replace(/\n/g,'<br/>') + '</div>';">
+
+            <textarea id='tib' name='forth_code' 
+              placeholder='Type Forth code here...'
+              hx-on::after-request="this.value=''"
+              onkeydown="if(event.keyCode===13 && !event.shiftKey){
+                event.preventDefault(); htmx.trigger('#tib-form', 'submit');
+              }"></textarea>
+        </form>
+    </div>
+</body>
+</html>
 )XX";
 
 bool XServer::begin(xQueWeb *web, int priority) {
@@ -140,34 +103,38 @@ void XServer::process(AsyncWebServerRequest *req) {
         req->send(400, "text/plain", "Bad Parameters");
         return;
     }
-    Serial.printf("xs#process tid=%d => ", _tx_id);
+    
     xSemaphoreTake(_mutex, portMAX_DELAY);
-    uint32_t   tid= ++_tx_id;
-    SessionBuf buf;
-    buf.req       = req;             /// <--- Save the pointer
+    uint32_t   tid  = ++_tx_id;      /// get session txn id
+    SessionBuf &buf = _active[tid];  /// create SessionBuf on the fly
+    buf.req       = req;             /// keep request pointer
     buf.timestamp = millis();        /// set time-to-live
-    _active[tid]  = buf;
     buf.is_done   = false;
+    
+    // --- HTMX Echo Element Optimization ---
+    // Instantly inject a clean trace container so the user sees what they typed, 
+    // immediately followed by the responsive target block for Forth's evaluation output.
+    // Optimized: Only write the tiny structural tag wrapper.
+    // The user's code echo text is handled client-side in the browser onsubmit macro layer now.
+    const char* tag_start = "<div class='rsp-entry'>";
+    buf.write(tag_start, strlen(tag_start));
     xSemaphoreGive(_mutex);
 
+    // Launch the responsive chunk stream pipeline
     AsyncWebServerResponse *rsp = req->beginChunkedResponse(
-        "text/plain", 
+        "text/html", // Switch text/plain to text/html so HTMX parses the markup container classes
         [this, tid](uint8_t *buf, size_t max, size_t index) -> size_t {
             return this->feed_web_rsp(tid, buf, max);      /// callback handler
         });
 
-    // Commit headers out to browser
-    req->send(rsp);                                        /// set response handler
+    rsp->addHeader("Connection", "keep-alive");
+    req->send(rsp);
 
-    Serial.printf("xs#process _active=%d << req[%d] %s => ",
-                  _active.count(tid), tid, (char*)p->value().c_str());
     if (!parse_req(tid, (char*)p->value().c_str())) {      /// request buffer full
         xSemaphoreTake(_mutex, portMAX_DELAY);
         _active.erase(tid);
         xSemaphoreGive(_mutex);
-        Serial.printf("failed _active.count(%d)=%d", tid, _active.count(tid));
     }
-    Serial.printf("\n");
 }
 
 bool XServer::parse_req(uint32_t tid, char *txt) {
@@ -196,7 +163,7 @@ bool XServer::parse_req(uint32_t tid, char *txt) {
             cmd.buf[sz] = '\0';                       /// ensure \0 terminated
 
             if (_web->put_req(cmd)) {
-                 Serial.printf(" >> [%d]'%s' ", (int)sz, (char*)cmd.buf);
+                 Serial.printf(" >> <%d>'%s' ", (int)sz, (char*)cmd.buf);
             }
             else {
                 Serial.printf("_web->put_req failed: '%s'\n", (char*)cmd.buf);
@@ -215,23 +182,28 @@ size_t XServer::feed_web_rsp(uint32_t tid, uint8_t *buf, size_t max) {
     size_t bsz = 0;
             
     xSemaphoreTake(_mutex, portMAX_DELAY);
-    if (_active.count(tid) > 0) {
+    if (_active.find(tid) != _active.end()) {
         SessionBuf &ses = _active[tid];
             
-        if (ses.available() > 0) bsz = ses.read(buf, max);
+        bsz = ses.read(buf, max);
             
-        // ONLY return 0 (EOF) if Forth said it is done AND the buffer is dry
-//        Serial.printf("xs#feed_web_rsp ses.is_done=%d ses.available()=%d\n", ses.is_done, ses.available());
+        // If data is finished and buffer is completely cleared out
         if (ses.is_done && ses.available() == 0) {
-            _active.erase(tid);
-            bsz = 0;
+            
+            // Append a closing tag wrapper element string to complete the HTMX DOM block
+            const char* close_tag = "</div><br/>";
+            size_t tag_len = strlen(close_tag);
+            
+            if (max >= tag_len) {
+                memcpy(buf, close_tag, tag_len);
+                bsz = tag_len;
+            }
+            
+            _active.erase(tid); // Drop session from map footprint context tree safely
+            xSemaphoreGive(_mutex);
+            return bsz; // Return the terminal HTML tag footprint bytes to close stream
         }
-        // CRITICAL: If we have no data right now, but Forth isn't done, 
-        // return a tiny dummy value or a space, OR return 0 but do NOT erase.
-        // To keep the connection alive without closing, we return 0 here safely 
-        // because we will manually wake up the TCP client from the other task.
     }
-    else Serial.printf("xs#feed_web_rsp _active.count(%d)=%d ", tid, _active.count(tid));
     xSemaphoreGive(_mutex);
     
     return bsz;
@@ -250,14 +222,14 @@ void XServer::handle_rsp() {
                 
             // --- THE CRITICAL WAKEUP ---
             // If the TCP client is connected, nudge it to trigger the pull callback again
-            if (ses.req == nullptr)                   Serial.print("xserver ses.req is NULL");
-            else if (ses.req->client() == nullptr)    Serial.print("xserver ses.req->client() is NULL");
-            else if (!ses.req->client()->connected()) Serial.print("xserver ses.req->client() not connected");
+            if (ses.req == nullptr)                   Serial.print("xserver ses.req is NULL\n");
+            else if (ses.req->client() == nullptr)    Serial.print("xserver ses.req->client() is NULL\n");
+            else if (!ses.req->client()->connected()) Serial.print("xserver ses.req->client() not connected\n");
             else {
                 ses.req->client()->write(NULL, 0);    /// Triggers the network stack to flush/poll
             }
         }
-        else Serial.printf("xs#handle_rsp %d not active ", msg.id);
+        else Serial.printf("xs#handle_rsp %d not active\n", msg.id);
         xSemaphoreGive(_mutex);
     }
 }
