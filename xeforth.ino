@@ -6,7 +6,7 @@
 [ WEB BROWSER ] 
   │ (HTTP POST "forth_code")
 [ CORE 0: Web Server Task ] (Priority 6)
-  │ (Parses string, packs struct, calls xQueueSend)
+  │ (Parses string, packs struct, calls xQueueSend)   
   ▼ [ webToForthQueue ] 
 [ CORE 0: Forth VM Task ] (Priority 5)
   | (xQueueReceive, interprets tokens)
@@ -43,7 +43,6 @@ XForth  myForthEngine(701, 10);
 XGL     myUiRenderer(480, 480);
 
 void setup() {
-    delay(200);                     ///< warm up external devices
     Serial.begin(115200);
 
     // 1. Build the non-fragmenting communications pipeline channels
