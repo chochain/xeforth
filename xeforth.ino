@@ -43,6 +43,7 @@ XForth  myForthEngine(701, 10);
 XGL     myUiRenderer(480, 480);
 
 void setup() {
+    delay(200);
     Serial.begin(115200);
 
     // 1. Build the non-fragmenting communications pipeline channels
