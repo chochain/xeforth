@@ -16,14 +16,9 @@ Transfer-Encoding: chunked
 const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 <html>
 <head>
-  <!-- 1. Enforce encoding immediately at the absolute start of the head block -->
   <meta charset='UTF-8'>
-  <title>xeForth Mainframe Panel</title>
-  
-  <!-- 2. Point to the official, explicit package distribution destination -->
+  <title>xeForth Panel</title>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-  <!-- script src="https://unpkg.com"></script -->
-  
   <style>
     body { font-family:'Courier New', monospace; font-size:14px; background:#121212; color:#00ff00; padding:10px; margin:0; }
     #container { display: flex; height: 95vh; }
@@ -35,23 +30,22 @@ const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
   </style>
 </head>
 <body>
-    <div id='container'>
-        <div id='log'>xeForth Mainframe Initialized...<br/></div>
-
-        <form id='tib-form' 
-           hx-post='/execute' 
-           hx-target='#log' 
-           hx-swap='beforeend'
-           onsubmit="document.getElementById('log').innerHTML += '<div class=\'cmd-entry\'>&gt; ' + document.getElementById('tib').value.replace(/\n/g,'<br/>') + '</div>';">
-
-            <textarea id='tib' name='forth_code' 
-              placeholder='Type Forth code here...'
-              hx-on::after-request="this.value=''"
-              onkeydown="if(event.keyCode===13 && !event.shiftKey){
-                event.preventDefault(); htmx.trigger('#tib-form', 'submit');
-              }"></textarea>
-        </form>
-    </div>
+  <div id='container'>
+    <div id='log'>xeForth Initialized...<br/></div>
+    <form id='tib-form' 
+      hx-post='/execute'
+      hx-target='#log' 
+      hx-swap='beforeend'
+      hx-on::after-request="console.log('hit'); this.reset()"
+      onsubmit="document.getElementById('log').innerHTML += '<div class=\'cmd-entry\'>&gt; ' + document.getElementById('tib').value.replace(/\n/g,'<br/>') + '</div>';">
+    <textarea id='tib' name='forth_code' 
+      placeholder='Type Forth code here...'
+      onkeydown="if(event.keyCode===13 && !event.shiftKey) {
+        event.preventDefault();
+        htmx.trigger('#tib-form', 'submit');
+      }"></textarea>
+    </form>
+  </div>
 </body>
 </html>
 )XX";
