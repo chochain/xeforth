@@ -32,10 +32,12 @@ void XForth::handle_web_req() {
         // Execute non-fragmenting multi-token text processing
         forth_vm(cmd, feedback);
         
-        // CC:Brief safety heartbeat yield hook
+        msg_web_t rsp;
+        rsp.id     = _req_id;
+        rsp.buf[0] = 0;
+        rsp.eos    = true;
+        _web->put_rsp(rsp);
     }
-//    msg_web_t rsp = { id, 0x0, true };
-//    _web->put_rsp(rsp);
 }
 
 void XForth::handle_ui_rsp() {
@@ -59,7 +61,7 @@ void XForth::feedback(int len, const char *rst) {
     static msg_gui_t gui_req;
     static msg_web_t web_rsp;
     
-    Serial.printf("  xforth#feedback[%d]>> <%d>'%s'", _req_id, len, rst);
+    Serial.printf("  xforth#feedback[%d] >> <%d>'%s'", _req_id, len, rst);
         
     int sz = std::min(len, (QUE_BUF_SZ - 1));
     memcpy(gui_req.buf, rst, sz);             /// leave last byte to
