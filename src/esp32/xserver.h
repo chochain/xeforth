@@ -57,9 +57,9 @@ struct SessionBuf {
 
 // Modified for ESP-IDF v4.x asynchronous queue handling
 struct AsyncReqTask {
-    httpd_handle_t hd;
-    int            fd;
-    uint32_t       tid;
+    httpd_handle_t hd;  /// server handle
+    int            fd;  /// client socket fd
+    uint32_t       tid; /// session id
 };
 
 class XServer {
