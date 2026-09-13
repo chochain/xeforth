@@ -23,13 +23,14 @@ static const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 </head>
 <body>
   <div id='container'>
-    <div id='log'>xeForth Initialized...<br/></div>
+    <div id='log'
+      hx-on::after-swap="if (this.scrollHeight - this.scrollTop - this.clientHeight < 150) this.scrollTop = this.scrollHeight">xeForth v1.0 Initialized...<br/></div>
     <form id='tib-form' 
       hx-post='/execute'
       hx-target='#log' 
       hx-swap='beforeend'
-      hx-on::after-request="console.log('hit'); this.reset()"
-      onsubmit="document.getElementById('log').innerHTML += '<div class=\'cmd-entry\'>&gt; ' + document.getElementById('tib').value.replace(/\n/g,'<br/>') + '</div>';">
+      hx-on::after-request="this.reset()"
+      onsubmit="const log=document.getElementById('log'); log.innerHTML += '<div class=\'cmd-entry\'>&gt; ' + document.getElementById('tib').value.replace(/\n/g,'<br/>') + '</div>'; log.scrollTop = log.scrollHeight">
     <textarea id='tib' name='forth_code' 
       placeholder='Type Forth code here...'
       onkeydown="if(event.keyCode===13 && !event.shiftKey) {
@@ -45,14 +46,57 @@ static const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 void XServer::worker_task(void *pv) {
     XServer *self = static_cast<XServer*>(pv);
     AsyncReqTask task;
+
     while (1) {
         if (xQueueReceive(self->_async_queue, &task, portMAX_DELAY) == pdTRUE) {
-            self->stream_session(task.hd, task.fd, task.tid);   /// parallel tasks
+            // req body was already read + parsed synchronously in submit_async(),
+            // inside the URI handler's valid scope. This task only ever touches
+            // (hd, fd, tid) — plain values, no dangling pointer risk.
+            self->stream_session(task.hd, task.fd, task.tid);
             self->close_session(task.tid);
             xSemaphoreGive(self->_worker_ready_count);
         }
     }
 }
+
+#if 0   // Gemini
+void XServer::worker_task(void *pv) {
+    XServer *self = static_cast<XServer*>(pv);
+    AsyncReqTask task;
+    
+    // 🚀 THREAD SAFE & NO HEAP: Allocated safely once on this worker's 
+    // private 8KB stack slice. Bypasses malloc/free completely.
+    char decoded[FORM_BUF_SZ]; 
+
+    while (1) {
+        // Block until a new request is pushed into the queue
+        if (xQueueReceive(self->_async_queue, &task, portMAX_DELAY) == pdTRUE) {
+            
+            // Extract the socket file descriptor for the lower level socket layer
+            int sockfd = httpd_req_to_sockfd(task.req);
+
+            if (sockfd >= 0) {
+                // 1. Read and URL-decode the form data safely inside this isolated task timeline
+                if (self->read_form(task.req, decoded, sizeof(decoded))) {
+                    
+                    // 2. Push the line-by-line commands into the Forth execution queue
+                    if (self->parse_req(task.tid, decoded)) {
+                        
+                        // 3. Enter the streaming loop until Forth signals eos
+                        self->stream_session(task.req->handle, sockfd, task.tid);
+                    }
+                }
+            } else {
+                Serial.println("xsvr_worker> error: invalid socket fd");
+            }
+            
+            // 4. Clean up session references and release the worker slot
+            self->close_session(task.tid);
+            xSemaphoreGive(self->_worker_ready_count);
+        }
+    }
+}
+#endif
 
 bool XServer::begin(xQueWeb *web, int priority) {
     if (web == NULL) return false;
@@ -139,6 +183,7 @@ bool XServer::parse_req(uint32_t tid, char *txt) {
             ? view.substr(start)
             : view.substr(start, end - start);
         
+        if (!token.empty() && token.back() == '\r') token.remove_suffix(1);
         if (!token.empty()) {
             size_t sz = std::min(token.size(), (size_t)(QUE_BUF_SZ - 1));
             memcpy(cmd.buf, token.data(), sz);
@@ -170,7 +215,8 @@ void XServer::handle_rsp() {
             
             if (ses.notify != nullptr) xSemaphoreGive(ses.notify);
         }
-        else Serial.printf("xs#handle_rsp %d not active\n", msg.id);xSemaphoreGive(_mutex);
+        else Serial.printf("xs#handle_rsp %d not active\n", msg.id);
+        xSemaphoreGive(_mutex);
     }
 }
 
@@ -262,11 +308,19 @@ void XServer::stream_session(httpd_handle_t hd, int fd, uint32_t tid) {
     xSemaphoreGive(_mutex);
     if (it == _active.end()) return;
     
-    SessionBuf &ses = it->second;// Send HTTP headers manually since we have taken direct socket control ownership
+    SessionBuf &ses = it->second; // Send HTTP headers manually since we have taken direct socket control ownership
     const char* initial_chunks = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n";
-    if (httpd_socket_send(hd, fd, initial_chunks, strlen(initial_chunks), 0) <= 0) {return;}
+    if (httpd_socket_send(hd, fd, initial_chunks, strlen(initial_chunks), 0) <= 0) { return; }
+    
+    const char* open_wrapper = "<div class='rsp-entry'>";
+    char chunk_header[32];       // 🚀 FIX 2: Increased buffer footprint size to safely parse lengths
+    
+    snprintf(chunk_header, sizeof(chunk_header), "%X\r\n", strlen(open_wrapper));
+    httpd_socket_send(hd, fd, chunk_header, strlen(chunk_header), 0);
+    httpd_socket_send(hd, fd, open_wrapper, strlen(open_wrapper), 0);
+    httpd_socket_send(hd, fd, "\r\n", 2, 0);
+
     uint8_t  out[SES_BUF_SZ];
-    char     chunk_header[16];
     uint32_t started = millis();
     while (true) {
         xSemaphoreTake(ses.notify, pdMS_TO_TICKS(WAIT_POLL_MS));
@@ -274,6 +328,7 @@ void XServer::stream_session(httpd_handle_t hd, int fd, uint32_t tid) {
         size_t n    = ses.read(out, sizeof(out));
         bool   done = ses.is_done && ses.available() == 0;
         xSemaphoreGive(_mutex);
+        
         if (n > 0) {
             snprintf(chunk_header, sizeof(chunk_header), "%X\r\n", n);
             if (httpd_socket_send(hd, fd, chunk_header, strlen(chunk_header), 0) <= 0 ||
@@ -281,16 +336,18 @@ void XServer::stream_session(httpd_handle_t hd, int fd, uint32_t tid) {
                 httpd_socket_send(hd, fd, "\r\n", 2, 0) <= 0) { break; }
         }
         if (done) break;
+
         if (millis() - started > REQ_TIMEOUT_MS) {
             const char* timeout_msg = "[Forth execution timeout]";
             snprintf(chunk_header, sizeof(chunk_header), "%X\r\n", strlen(timeout_msg));
             httpd_socket_send(hd, fd, chunk_header, strlen(chunk_header), 0);
             httpd_socket_send(hd, fd, timeout_msg, strlen(timeout_msg), 0);
-            httpd_socket_send(hd, fd, "\r\n", 2, 0);break;
+            httpd_socket_send(hd, fd, "\r\n", 2, 0);
+            break;
         }
     }
     // Send closing layout wrappers and terminal chunk signals safely
-    const char* final_wrapper = "";
+    const char* final_wrapper = "</div><br/>";
     snprintf(chunk_header, sizeof(chunk_header), "%X\r\n", strlen(final_wrapper));
     httpd_socket_send(hd, fd, chunk_header, strlen(chunk_header), 0);
     httpd_socket_send(hd, fd, final_wrapper, strlen(final_wrapper), 0);
@@ -300,7 +357,54 @@ void XServer::stream_session(httpd_handle_t hd, int fd, uint32_t tid) {
 }
 
 esp_err_t XServer::submit_async(httpd_req_t *req) {
-    // Check if background worker slots are available
+    if (xSemaphoreTake(_worker_ready_count, 0) != pdTRUE) {
+        Serial.println("xsvr> no worker available, request rejected");
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_send(req, "Server busy, try again", HTTPD_RESP_USE_STRLEN);
+    }
+
+    int sockfd = httpd_req_to_sockfd(req);
+    if (sockfd < 0) {
+        xSemaphoreGive(_worker_ready_count);
+        return ESP_FAIL;
+    }
+
+    // Read + URL-decode the POST body here, while req is still valid.
+    // Bounded by FORM_BUF_SZ — this is the only req-touching work left,
+    // and it's exactly what esp_http_server expects a handler to do.
+    char decoded[FORM_BUF_SZ];
+    if (!read_form(req, decoded, sizeof(decoded))) {
+        xSemaphoreGive(_worker_ready_count);
+        return ESP_FAIL;   // read_form() already sent the error response
+    }
+
+    uint32_t tid = open_session();
+
+    // parse_req() only touches _web (a thread-safe MBox), not req — safe here.
+    if (!parse_req(tid, decoded)) {
+        close_session(tid);
+        xSemaphoreGive(_worker_ready_count);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Queue full");
+        return ESP_FAIL;
+    }
+
+    // Hand off only plain values. No req pointer crosses the task boundary.
+    AsyncReqTask task{ req->handle, sockfd, tid };
+    if (xQueueSend(_async_queue, &task, pdMS_TO_TICKS(100)) != pdTRUE) {
+        Serial.println("xsvr> async queue full, request rejected");
+        close_session(tid);
+        xSemaphoreGive(_worker_ready_count);
+        return ESP_FAIL;
+    }
+
+    // Return without calling httpd_resp_send*(). The worker task owns the
+    // socket from here via httpd_socket_send(), independent of req's lifetime.
+    return ESP_OK;
+}
+
+#if 0 // Gemini
+esp_err_t XServer::submit_async(httpd_req_t *req) {
+    // 1. Instantly check if we have an available background worker slot
     if (xSemaphoreTake(_worker_ready_count, 0) != pdTRUE) {
         Serial.println("xsvr> no worker available, request rejected");
         httpd_resp_set_status(req, "503 Service Unavailable");
@@ -314,27 +418,13 @@ esp_err_t XServer::submit_async(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    char decoded[FORM_BUF_SZ];
-    if (!read_form(req, decoded, sizeof(decoded))) {
-        xSemaphoreGive(_worker_ready_count);
-        return ESP_FAIL;
-    }
-
-    // 1. Open the session and capture the unique transaction ID safely
+    // 2. Open a unique tracking session ID
     uint32_t tid = open_session();
 
-    // 2. Parse the request using that specific tid
-    if (!parse_req(tid, decoded)) {
-        close_session(tid);
-        httpd_resp_set_status(req, "500 Internal Server Error");
-        httpd_resp_send(req, "[queue full]", HTTPD_RESP_USE_STRLEN);
-        xSemaphoreGive(_worker_ready_count);
-        return ESP_FAIL;
-    }
+    // 3. Pack the raw request context and the tid into the task structure
+    AsyncReqTask task{ req, tid }; 
 
-    // 3. 🚀 CRITICAL: Pack tid into the queue task item right here
-    AsyncReqTask task{ req->handle, sockfd, tid }; 
-
+    // 4. Send the task package into the queue for the workers to catch
     if (xQueueSend(_async_queue, &task, pdMS_TO_TICKS(100)) != pdTRUE) {
         Serial.println("xsvr> async queue full, request rejected");
         close_session(tid);
@@ -342,18 +432,18 @@ esp_err_t XServer::submit_async(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
+    // 5. Wake up the native v4.x internal HTTP server state layer safely
     esp_err_t err = httpd_queue_work(
         req->handle,
         [](void *arg) {
-            // Pass the socket file descriptor as the void* argument instead of the ID
-            // Correctly cast the incoming argument back to an integer file descriptor 
-            int fd = (int)(uintptr_t)arg;
-            // This safely keeps the custom v4.x work injection system happy without 
-            // messing up your transaction mapping.
-            (void)fd;
+            int fd = (int)(uintptr_t)arg;  // Cast the incoming argument back to an integer file descriptor safely
+            (void)fd;                      // Explicitly silence unused variable compiler warnings
+            // Intentional NO-OP.
+            // Calling httpd_queue_work wakes up our processing tracking system,
+            // while the actual streaming loop runs cleanly on our custom worker task threads.
         },
-        (void*)(uintptr_t)sockfd
-    );
+        (void*)(uintptr_t)sockfd);
+    
     if (err != ESP_OK) {
         close_session(tid);
         AsyncReqTask dropped;
@@ -363,6 +453,7 @@ esp_err_t XServer::submit_async(httpd_req_t *req) {
     }
     return ESP_OK;
 }
+#endif
 
 void XServer::run() {
     setup();
