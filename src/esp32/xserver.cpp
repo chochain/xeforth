@@ -24,7 +24,7 @@ static const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 <body>
   <div id='container'>
     <div id='log'
-      hx-on::after-swap="if (this.scrollHeight - this.scrollTop - this.clientHeight < 150) this.scrollTop = this.scrollHeight">xeForth v1.0 Initialized...<br/></div>
+      hx-on::after-swap="if (this.scrollHeight - this.scrollTop - this.clientHeight < 300) this.scrollTop = this.scrollHeight">xeForth v1.0 Initialized...<br/></div>
     <form id='tib-form' 
       hx-post='/execute'
       hx-target='#log' 
