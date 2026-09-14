@@ -6,9 +6,7 @@
 #include <esp_heap_caps.h>
 
 // 1. Declare the compiled C-array font file asset
-LV_FONT_DECLARE(terminal_mono_14);
-//#define LV_FONT_UNSCII_8  1
-//#define LV_FONT_UNSCII_16 1
+LV_FONT_DECLARE(jetbrains_mono_14);
 
 // Example callback function required by LVGL to flush compiled frame buffers to the display
 void my_disp_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p) {
@@ -296,8 +294,7 @@ void XGL::init_hardware() {
     _term_log = lv_textarea_create(act_scr);
     lv_obj_set_size(_term_log, _width - 20, 290);
     lv_obj_align(_term_log, LV_ALIGN_BOTTOM_MID, 0, -10);
-    lv_obj_set_style_text_font(_term_log, &terminal_mono_14, 0);             /// set monospace font
-//    lv_obj_set_style_text_font(_term_log, &lv_font_unscii_8, 0);             /// set monospace font
+    lv_obj_set_style_text_font(_term_log, &jetbrains_mono_14, 0);           /// set monospace font
     
     // Force a classic retro-monospaced terminal color layout
     lv_obj_set_style_bg_color(_term_log, lv_color_make(5, 6, 8), 0);
