@@ -251,7 +251,7 @@ void see(IU pfa, int base) {
 }
 
 void words() {
-    const int WIDTH = 43;
+    const int WIDTH = 44;
     int sz = 0;
     for (int i=0; i<dict.idx; i++) {
         const char *nm = dict[i]->name;
@@ -261,8 +261,8 @@ void words() {
 #else  //  CC_DEBUG > 1
         if (nm[len-1] != ' ') {
 #endif // CC_DEBUG > 1
-            sz += len + 2;
-            fout("  %s", nm);
+            sz += len + 1;
+            fout(" %s", nm);
         }
         if (sz > WIDTH) {
             sz = 0;
