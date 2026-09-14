@@ -251,7 +251,7 @@ void see(IU pfa, int base) {
 }
 
 void words() {
-    const int WIDTH = 44;
+    const int WIDTH = 43;
     int sz = 0;
     for (int i=0; i<dict.idx; i++) {
         const char *nm = dict[i]->name;
@@ -297,13 +297,10 @@ void ss_dump(VM &vm, bool forced) {
     fout_flush();
 }
 void mem_dump(U32 p0, IU sz, int base) {
-    for (IU i=p0 & ~15; i<=(p0+sz); i+=16) {
+    for (IU i=p0 & ~7; i<=(p0+sz); i+=8) {
         fout("%04x: ", i);
-        for (int j=0; j<16; j++) {
-            U8 c = pmem[i+j];
-            fout("%02x%s", (int)c, (j % 4 == 3 ? " " : ""));
-        }
-        for (int j=0; j<16; j++) {
+        for (int j=0; j<8; j++) fout("%02x ", (int)pmem[i+j]);
+        for (int j=0; j<8; j++) {
             U8 c = pmem[i+j] & 0x7f;
             fout("%c", ((c==0x7f||c<0x20) ? '_' : c));
         }
