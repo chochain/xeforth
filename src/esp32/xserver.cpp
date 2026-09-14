@@ -1,6 +1,6 @@
 ///
 /// @file
-/// @brief Web Server class implementation (esp_http_server backend - Downgraded for Core 2.0.16)
+/// @brief Web Server class implementation (esp_http_server v2.0.16)
 ///
 #include <algorithm>            
 #include "xserver.h"
@@ -59,7 +59,7 @@ void XServer::worker_task(void *pv) {
     }
 }
 
-#if 0   // Gemini
+#if 0   // Gemini's solution
 void XServer::worker_task(void *pv) {
     XServer *self = static_cast<XServer*>(pv);
     AsyncReqTask task;
@@ -131,7 +131,8 @@ void XServer::setup() {
     config.server_port       = _port;
     config.lru_purge_enable  = true;
     config.core_id           = 0;
-    config.max_open_sockets  = ASYNC_WORKER_COUNT + 2;  
+    config.max_open_sockets  = ASYNC_WORKER_COUNT + 2;
+    config.stack_size        = 8192;        /// budget for decode buffer
 
     if (httpd_start(&_httpd, &config) != ESP_OK) {
         Serial.println("xsvr> httpd_start failed");
@@ -282,6 +283,7 @@ bool XServer::read_form(httpd_req_t *req, char *out, size_t out_sz) {
     return true;
 }
 
+
 uint32_t XServer::open_session() {
     xSemaphoreTake(_mutex, portMAX_DELAY);
     uint32_t   tid  = ++_tx_id;         
@@ -369,10 +371,13 @@ esp_err_t XServer::submit_async(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    // Read + URL-decode the POST body here, while req is still valid.
-    // Bounded by FORM_BUF_SZ — this is the only req-touching work left,
-    // and it's exactly what esp_http_server expects a handler to do.
+    /// Read + URL-decode the POST body here, while req is still valid.
+    /// Bounded by FORM_BUF_SZ — this is the only req-touching work left,
+    /// and it's exactly what esp_http_server expects a handler to do.
+    /// takes 2K here, task.stack_size adjusted to 8K
+    /// consider auto decoded = std::make_unique<char[]>(FORM_BUF_SZ);
     char decoded[FORM_BUF_SZ];
+                                    
     if (!read_form(req, decoded, sizeof(decoded))) {
         xSemaphoreGive(_worker_ready_count);
         return ESP_FAIL;   // read_form() already sent the error response
