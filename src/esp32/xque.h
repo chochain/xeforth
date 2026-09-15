@@ -6,6 +6,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
+#define ERR(msg)        Serial.println(msg)
+#define LOG(fmt, ...)   Serial.printf(fmt, __VA_ARGS__)
+
 // ==========================================
 // ESP32 NATIVE FREERTOS IMPLEMENTATION
 // ==========================================
