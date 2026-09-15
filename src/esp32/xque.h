@@ -7,6 +7,8 @@
 #include "freertos/queue.h"
 
 #define ERR(msg)        Serial.println(msg)
+#define DEBUG(fmt, ...)
+//#define DEBUG(fmt, ...) Serial.printf(fmt, __VA_ARGS__)
 #define LOG(fmt, ...)   Serial.printf(fmt, __VA_ARGS__)
 
 // ==========================================
