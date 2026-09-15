@@ -27,7 +27,7 @@ void XForth::handle_web_req() {
     while (_web->get_req(req)) {
         _req_id = req.id;      // capture session id, CC:DEBUG static => dynamic
         char *cmd = (char*)req.buf;
-        Serial.printf("  xforth << req[%d]'%s'\n", req.id, cmd);
+        LOG("  xforth << req[%d]'%s'\n", req.id, cmd);
             
         // Execute non-fragmenting multi-token text processing
         forth_vm(cmd, feedback);
@@ -48,7 +48,7 @@ void XForth::handle_ui_rsp() {
 }
 
 void XForth::run() {
-    Serial.printf("xforth task=%d> Background thread online.\n", _core);
+    LOG("xforth task=%d> Background thread online.\n", _core);
 
     while (1) {
         handle_web_req();
@@ -61,7 +61,7 @@ void XForth::feedback(int len, const char *rst) {
     static msg_gui_t gui_req;
     static msg_web_t web_rsp;
     
-    Serial.printf("  xforth#feedback[%d] >> <%d>'%s'", _req_id, len, rst);
+    LOG("  xforth#feedback[%d] >> <%d>'%s'", _req_id, len, rst);
         
     int sz = std::min(len, (QUE_BUF_SZ - 1));
     memcpy(gui_req.buf, rst, sz);             /// leave last byte to
@@ -69,7 +69,7 @@ void XForth::feedback(int len, const char *rst) {
     gui_req.op_code = VECTOR_CMD;
     
     if (!_ui->put_req(gui_req)) {
-        Serial.printf("xforth#gui_req failed on %s\n", rst);
+        LOG("xforth#gui_req failed on %s\n", rst);
     }
     memcpy(web_rsp.buf, rst, sz);             /// leave last byte to
     web_rsp.buf[sz] = '\0';                   /// ensure \0 terminated
@@ -77,7 +77,7 @@ void XForth::feedback(int len, const char *rst) {
     web_rsp.eos     = false;
         
     if (!_web->put_rsp(web_rsp)) {
-        Serial.printf("xforth#web_rsp failed on %s\n", rst);
+        LOG("xforth#web_rsp failed on %s\n", rst);
     }
 }
 
@@ -92,7 +92,7 @@ void XForth::outer(uint32_t id, char *cmd) {  /// not used, call forth_vm direct
     while (idiom != NULL) {
         // Pass individual parsed tokens directly to your low-level C engine
         // by referencing their raw memory string pointers
-        Serial.printf("  xforth << %s\n", idiom);
+        LOG("  xforth << %s\n", idiom);
         
         // Seek out the next individual space-separated command segment
         idiom = strtok_r(NULL, " ", &save_ptr);

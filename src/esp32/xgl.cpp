@@ -96,7 +96,7 @@ bool XGL::begin(xQueUI *ui, int priority) {
 
 // Thread-safe terminal stream printer
 void XGL::term_print(const char *txt, lv_color_t textColor) {
-    Serial.printf("    xgl#term_log <<+ '%s'", txt);
+    LOG("    xgl#term_log <<+ '%s'", txt);
     
     // Append text to terminal object canvas
     lv_textarea_add_text(_term_log, txt);
@@ -130,7 +130,7 @@ void XGL::handle_req() {
     msg_gui_t req;
     // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
     while (_ui->get_req(req)) {
-        Serial.printf("    xgl#handle_req << op=%d, '%s'", req.op_code, req.buf ? (char*)req.buf : (char*)"NA");
+        LOG("    xgl#handle_req << op=%d, '%s'", req.op_code, req.buf ? (char*)req.buf : (char*)"NA");
         switch (req.op_code) {
         case VECTOR_CLEAR:
             term_print("clear", lv_color_make(255, 0, 0));
@@ -238,10 +238,11 @@ void XGL::init_hardware() {
     // Allocate a high-speed 40-line rendering slice block inside internal PSRAM memory
     // 2. Allocate the 480x40 true-color frame buffer strictly in External PSRAM
     size_t     buf_sz = _width * 40;
-    _disp_draw_buf    = (lv_color_t*)ps_malloc(buf_sz * sizeof(lv_color_t));
+    size_t     raw_sz = buf_sz * sizeof(lv_color_t);
+    _disp_draw_buf    = (lv_color_t*)ps_malloc(raw_sz);
     
     if (_disp_draw_buf == NULL) {
-        Serial.println("Fatal: Failed to allocate frame canvas buffer in PSRAM!");
+        ERR("Fatal: Failed to allocate frame canvas buffer in PSRAM!");
         vTaskDelete(NULL);
     }
     lv_disp_draw_buf_init(&_draw_buf, _disp_draw_buf, NULL, buf_sz);
@@ -307,7 +308,7 @@ void XGL::init_hardware() {
     // Add Boot Greetings Text String
     lv_textarea_set_text(_term_log, "xeForth Initialized.\n\n");
     
-    Serial.println("core1 XGL> active.");
+    LOG("core1 XGL> active buf_sz=%d (bytes).\n", raw_sz);
 }
 
 
