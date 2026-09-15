@@ -96,7 +96,7 @@ bool XGL::begin(xQueUI *ui, int priority) {
 
 // Thread-safe terminal stream printer
 void XGL::term_print(const char *txt, lv_color_t textColor) {
-    LOG("    xgl#term_log <<+ '%s'", txt);
+    DEBUG("    xgl#term_log <<+ '%s'", txt);
     
     // Append text to terminal object canvas
     lv_textarea_add_text(_term_log, txt);
@@ -130,7 +130,7 @@ void XGL::handle_req() {
     msg_gui_t req;
     // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
     while (_ui->get_req(req)) {
-        LOG("    xgl#handle_req << op=%d, '%s'", req.op_code, req.buf ? (char*)req.buf : (char*)"NA");
+        DEBUG("    xgl#handle_req << op=%d, '%s'", req.op_code, req.buf ? (char*)req.buf : (char*)"NA");
         switch (req.op_code) {
         case VECTOR_CLEAR:
             term_print("clear", lv_color_make(255, 0, 0));

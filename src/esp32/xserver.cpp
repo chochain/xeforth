@@ -259,7 +259,7 @@ bool XServer::_parse_req(uint32_t tid, char *txt) {
             memcpy(cmd.buf, token.data(), sz);
             cmd.buf[sz] = '\0';
             if (_web->put_req(cmd)) {
-                LOG(" >> <%d>'%s'\n", (int)sz, (char*)cmd.buf);
+                DEBUG(" >> <%d>'%s'\n", (int)sz, (char*)cmd.buf);
             }
             else {
                 LOG("_web->put_req failed: '%s'\n", (char*)cmd.buf);
@@ -296,7 +296,7 @@ void XServer::_close_session(uint32_t tid) {
 void XServer::handle_rsp() {
     msg_web_t msg;
     while (_web->get_rsp(msg)) {
-        LOG("xs#handle_rsp <<%c [%d]'%s' ", msg.eos ? 'X' : '+', msg.id, (char*)msg.buf);
+        DEBUG("xs#handle_rsp <<%c [%d]'%s' ", msg.eos ? 'X' : '+', msg.id, (char*)msg.buf);
         xSemaphoreTake(_mutex, portMAX_DELAY);
         auto it = _active.find(msg.id);
         if (it != _active.end()) {

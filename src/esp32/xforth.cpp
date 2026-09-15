@@ -27,7 +27,7 @@ void XForth::handle_web_req() {
     while (_web->get_req(req)) {
         _req_id = req.id;      // capture session id, CC:DEBUG static => dynamic
         char *cmd = (char*)req.buf;
-        LOG("  xforth << req[%d]'%s'\n", req.id, cmd);
+        DEBUG("  xforth << req[%d]'%s'\n", req.id, cmd);
             
         // Execute non-fragmenting multi-token text processing
         forth_vm(cmd, feedback);
@@ -61,7 +61,7 @@ void XForth::feedback(int len, const char *rst) {
     static msg_gui_t gui_req;
     static msg_web_t web_rsp;
     
-    LOG("  xforth#feedback[%d] >> <%d>'%s'", _req_id, len, rst);
+    DEBUG("  xforth#feedback[%d] >> <%d>'%s'", _req_id, len, rst);
         
     int sz = std::min(len, (QUE_BUF_SZ - 1));
     memcpy(gui_req.buf, rst, sz);             /// leave last byte to
@@ -92,7 +92,7 @@ void XForth::outer(uint32_t id, char *cmd) {  /// not used, call forth_vm direct
     while (idiom != NULL) {
         // Pass individual parsed tokens directly to your low-level C engine
         // by referencing their raw memory string pointers
-        LOG("  xforth << %s\n", idiom);
+        DEBUG("  xforth << %s\n", idiom);
         
         // Seek out the next individual space-separated command segment
         idiom = strtok_r(NULL, " ", &save_ptr);
