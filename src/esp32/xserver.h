@@ -7,7 +7,7 @@
 
 #include <map>
 #include <string>
-#include <string_view>
+//#include <string_view>
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_http_server.h>
@@ -57,9 +57,10 @@ struct SessionBuf {
 
 // Modified for ESP-IDF v4.x asynchronous queue handling
 struct AsyncReqTask {
-    httpd_handle_t hd;  /// server handle
-    int            fd;  /// client socket fd
-    uint32_t       tid; /// session id
+    httpd_handle_t hd;                    /// server handle
+    int            fd;                    /// client socket fd
+    uint32_t       tid;                   /// session id
+    char           decoded[FORM_BUF_SZ];  /// hard copy, no pointer passing
 };
 
 class XServer {
@@ -89,12 +90,13 @@ private:
     esp_err_t handle_web_req(httpd_req_t *req);
     bool      _read_form(httpd_req_t *req, char *out, size_t out_sz);
     uint32_t  _open_session();
-    bool      _parse_req(uint32_t id, char *txt);
+    bool      _parse_req(uint32_t id, char *txt, size_t &lc, size_t &lc_total);
     void      _close_session(uint32_t tid);
 
     /// web response handler
     void      handle_rsp();
     void      _stream_session(httpd_handle_t hd, int fd, uint32_t tid); // Modified signature
+    void      _report_trunc(uint32_t tid, size_t lc, size_t lc_total);
 
 public:
     XServer(const char* ssid, const char* password, uint16_t port = 80) :
