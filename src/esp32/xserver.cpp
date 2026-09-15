@@ -78,10 +78,14 @@ void XServer::worker_task(void *pv) {
     AsyncReqTask task;
 
     while (1) {
+        size_t lc = 0, lc_total = 0;
         if (xQueueReceive(self->_async_queue, &task, portMAX_DELAY) == pdTRUE) {
             // req body was already read + parsed synchronously in submit_async(),
             // inside the URI handler's valid scope. This task only ever touches
             // (hd, fd, tid) — plain values, no dangling pointer risk.
+            if (!self->_parse_req(task.tid, task.decoded, lc, lc_total)) {
+                self->_report_trunc(task.tid, lc, lc_total);
+            }
             self->_stream_session(task.hd, task.fd, task.tid);
             self->_close_session(task.tid);
             xSemaphoreGive(self->_worker_ready_count);
@@ -181,7 +185,7 @@ esp_err_t XServer::handle_web_req(httpd_req_t *req) {
     }
 
     uint32_t tid = _open_session();
-
+#if 0
     // parse_req() only touches _web (a thread-safe MBox), not req — safe here.
     if (!_parse_req(tid, decoded)) {
         _close_session(tid);
@@ -189,9 +193,10 @@ esp_err_t XServer::handle_web_req(httpd_req_t *req) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Queue full");
         return ESP_FAIL;
     }
-
+#endif
     // Hand off only plain values. No req pointer crosses the task boundary.
     AsyncReqTask task{ req->handle, sockfd, tid };
+    memcpy(task.decoded, decoded, sizeof(decoded));
     if (xQueueSend(_async_queue, &task, pdMS_TO_TICKS(100)) != pdTRUE) {
         ERR("xsvr> async queue full, request rejected");
         _close_session(tid);
@@ -238,6 +243,36 @@ bool XServer::_read_form(httpd_req_t *req, char *out, size_t out_sz) {
     return true;
 }
 
+bool XServer::_parse_req(uint32_t tid, char *txt, size_t &lc, size_t &lc_total) {
+    lc = lc_total = 0;
+    bool ok = true;
+
+    char *saveptr = nullptr;
+    char *line = strtok_r(txt, "\n", &saveptr);
+    while (line != nullptr) {
+        lc_total++;
+        if (ok) {
+            msg_web_t cmd {};
+            cmd.id  = tid;
+            cmd.eos = false;
+            size_t len = strlen(line);
+            if (len > QUE_BUF_SZ - 1) len = QUE_BUF_SZ - 1;
+            memcpy(cmd.buf, line, len);
+
+            if (_web->put_req_wait(cmd, pdMS_TO_TICKS(200))) {
+                DEBUG(" >> <%d>'%s'\n", (int)sz, (char*)cmd.buf);
+                lc++;
+            } else {
+                LOG("_web->put_req failed: '%s'\n", (char*)cmd.buf);
+                ok = false;   // stop enqueuing, but keep counting remaining lines
+            }
+        }
+        line = strtok_r(nullptr, "\n", &saveptr);
+    }
+    return ok;
+}
+
+#if 0 // check truncated
 bool XServer::_parse_req(uint32_t tid, char *txt) {
     std::string_view view(txt, strlen(txt));
     std::string_view delim("\n");
@@ -271,6 +306,7 @@ bool XServer::_parse_req(uint32_t tid, char *txt) {
     }
     return true;
 }
+#endif
 
 uint32_t XServer::_open_session() {
     xSemaphoreTake(_mutex, portMAX_DELAY);
@@ -364,6 +400,23 @@ void XServer::_stream_session(httpd_handle_t hd, int fd, uint32_t tid) {
     httpd_socket_send(hd, fd, "\r\n", 2, 0);
     // Final end-of-transfer empty chunk marker
     httpd_socket_send(hd, fd, "0\r\n\r\n", 5, 0);
+}
+
+void XServer::_report_trunc(uint32_t tid, size_t lc, size_t lc_total) {
+    char msg[96];
+    int len = snprintf(msg, sizeof(msg),
+        "\r\n[SYSTEM] truncated: %u of %u lines queued, engine busy\r\n",
+        (unsigned)lc, (unsigned)lc_total);
+    if (len <= 0) return;
+    if (len > (int)sizeof(msg)) len = sizeof(msg);
+
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    auto it = _active.find(tid);
+    if (it != _active.end()) {
+        it->second.write(msg, (size_t)len);
+        if (it->second.notify) xSemaphoreGive(it->second.notify);
+    }
+    xSemaphoreGive(_mutex);
 }
 ///@}
 ///@name - public interface
