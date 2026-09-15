@@ -32,6 +32,9 @@ public:
     bool send_non_blocking(const T &item) {
         return xQueueSend(_queue, &item, 0) == pdPASS;    /// 0 wait ticks => immediately return
     }
+    bool send_with_timeout(const T &item, TickType_t ticks) {
+        return xQueueSend(_queue, &item, ticks) == pdPASS;
+    }
     bool receive_non_blocking(T &item) {
         return xQueueReceive(_queue, &item, 0) == pdPASS; // non-blocking pool
     }
@@ -78,6 +81,11 @@ public:
         _cond_var.notify_one();
         return true;
     }
+    bool send_with_timeout(const T &item, TickType_t ticks) {
+        std::unique_lock<std::mutex> lock(_mutex);
+        return _cond_var.wait_for(lock, [this]() { _queue.push(item); }, ticks);
+    }
+
     bool receive_non_blocking(T &item) {
         std::unique_lock<std::mutex> lock(_mutex);
         if (_queue.empty()) return false;
@@ -118,6 +126,7 @@ public:
     bool put_rsp(const RspT &item) { return _rsp_q.send_non_blocking(item);    }
     bool get_req(ReqT &item)       { return _req_q.receive_non_blocking(item); }
     bool get_rsp(RspT &item)       { return _rsp_q.receive_non_blocking(item); }
+    bool put_req_wait(const ReqT &item, TickType_t ticks) { return _req_q.send_with_timeout(item, ticks); }
     void wait_for_req(ReqT &item)   { _req_q.receive_blocking(item);           }
     void wait_for_rsp(RspT &item)   { _rsp_q.receive_blocking(item);           }
     /* ISR Context API */
