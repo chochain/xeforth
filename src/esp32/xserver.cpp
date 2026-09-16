@@ -2,7 +2,6 @@
 /// @file
 /// @brief Web Server class implementation (esp_http_server v2.0.16)
 ///
-#include <algorithm>
 #include "xserver.h"
 
 static const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
@@ -216,10 +215,15 @@ bool XServer::_read_form(httpd_req_t *req, char *out, size_t out_sz) {
         return false;
     }
 
-    std::string raw(total, '\0');
-    int received = 0;
+    // FORM_BUF_SZ-sized scratch buffer on the caller's stack instead of a
+    // heap-allocated std::string. `total < FORM_BUF_SZ` is already checked
+    // above, so `raw[total]` for the null terminator is always in bounds.
+    // handle_web_req() is single-instance per call (esp_http_server invokes
+    // it synchronously, one at a time), so a stack buffer here is safe.
+    char raw[FORM_BUF_SZ];
+    int  received = 0;
     while (received < total) {
-        int r = httpd_req_recv(req, &raw[received], total - received);
+        int r = httpd_req_recv(req, raw + received, total - received);
         if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
         if (r <= 0) {
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad Parameters");
@@ -227,19 +231,20 @@ bool XServer::_read_form(httpd_req_t *req, char *out, size_t out_sz) {
         }
         received += r;
     }
+    raw[total] = '\0';
 
     const char *key  = "forth_code=";
     size_t      klen = strlen(key);
-    size_t      pos  = raw.find(key);
-    if (pos == std::string::npos) {
+    const char *pos  = strstr(raw, key);
+    if (pos == nullptr) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad Parameters");
         return false;
     }
     pos += klen;
-    size_t end  = raw.find('&', pos);
-    size_t vlen = (end == std::string::npos ? raw.size() : end) - pos;
+    const char *amp  = strchr(pos, '&');
+    size_t      vlen = amp ? (size_t)(amp - pos) : strlen(pos);
 
-    _url_decode(raw.c_str() + pos, vlen, out, out_sz);
+    _url_decode(pos, vlen, out, out_sz);
     return true;
 }
 
@@ -260,7 +265,7 @@ bool XServer::_parse_req(uint32_t tid, char *txt, size_t &lc, size_t &lc_total) 
             memcpy(cmd.buf, line, len);
 
             if (_web->put_req_wait(cmd, pdMS_TO_TICKS(200))) {
-                DEBUG(" >> <%d>'%s'\n", (int)sz, (char*)cmd.buf);
+                DEBUG(" >> <%d>'%s'\n", (int)len, (char*)cmd.buf);
                 lc++;
             } else {
                 LOG("_web->put_req failed: '%s'\n", (char*)cmd.buf);
@@ -271,42 +276,6 @@ bool XServer::_parse_req(uint32_t tid, char *txt, size_t &lc, size_t &lc_total) 
     }
     return ok;
 }
-
-#if 0 // check truncated
-bool XServer::_parse_req(uint32_t tid, char *txt) {
-    std::string_view view(txt, strlen(txt));
-    std::string_view delim("\n");
-    size_t    start = 0;
-    msg_web_t cmd;
-    cmd.id = tid;
-    while (start < view.size()) {
-        start = view.find_first_not_of(delim, start);
-        if (start == std::string_view::npos) break;
-
-        size_t end = view.find_first_of(delim, start);
-        std::string_view token = (end == std::string_view::npos)
-            ? view.substr(start)
-            : view.substr(start, end - start);
-
-        if (!token.empty() && token.back() == '\r') token.remove_suffix(1);
-        if (!token.empty()) {
-            size_t sz = std::min(token.size(), (size_t)(QUE_BUF_SZ - 1));
-            memcpy(cmd.buf, token.data(), sz);
-            cmd.buf[sz] = '\0';
-            if (_web->put_req(cmd)) {
-                DEBUG(" >> <%d>'%s'\n", (int)sz, (char*)cmd.buf);
-            }
-            else {
-                LOG("_web->put_req failed: '%s'\n", (char*)cmd.buf);
-                return false;
-            }
-        }
-        if (end == std::string_view::npos) break;
-        start = end + 1;
-    }
-    return true;
-}
-#endif
 
 uint32_t XServer::_open_session() {
     xSemaphoreTake(_mutex, portMAX_DELAY);
