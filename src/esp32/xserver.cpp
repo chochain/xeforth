@@ -42,34 +42,6 @@ static const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 </html>
 )XX";
 
-///> url => text converter
-static size_t _url_decode(const char *src, size_t src_len, char *dst, size_t dst_sz) {
-    auto hex = [](char h) -> int {
-        if (h >= '0' && h <= '9') return h - '0';
-        if (h >= 'a' && h <= 'f') return h - 'a' + 10;
-        if (h >= 'A' && h <= 'F') return h - 'A' + 10;
-        return -1;
-    };
-    size_t o = 0;
-    for (size_t i = 0; i < src_len && o + 1 < dst_sz; ++i) {
-        char c = src[i];
-        if (c == '+') {
-            dst[o++] = ' ';
-        } else if (c == '%' && i + 2 < src_len) {
-            int hi = hex(src[i + 1]), lo = hex(src[i + 2]);
-            if (hi >= 0 && lo >= 0) {
-                dst[o++] = (char)((hi << 4) | lo);
-                i += 2;
-            } else {
-                dst[o++] = c;
-            }
-        } else {
-            dst[o++] = c;
-        }
-    }
-    dst[o] = '\0';
-    return o;
-}
 ///@name - static web worker task (see xserver.h ASYNC_WORKER_COUNT)
 ///@{
 void XServer::worker_task(void *pv) {
@@ -77,14 +49,11 @@ void XServer::worker_task(void *pv) {
     AsyncReqTask task;
 
     while (1) {
-        size_t lc = 0, lc_total = 0;
         if (xQueueReceive(self->_async_queue, &task, portMAX_DELAY) == pdTRUE) {
-            // req body was already read + parsed synchronously in submit_async(),
-            // inside the URI handler's valid scope. This task only ever touches
-            // (hd, fd, tid) — plain values, no dangling pointer risk.
-            if (!self->_parse_req(task.tid, task.decoded, lc, lc_total)) {
-                self->_report_trunc(task.tid, lc, lc_total);
-            }
+            // Enqueuing to Forth already happened synchronously in
+            // handle_web_req(), bounded by SUBMIT_BUDGET_MS. This task
+            // only streams the response back and owns nothing but plain
+            // values (hd, fd, tid) - no dangling pointer risk.
             self->_stream_session(task.hd, task.fd, task.tid);
             self->_close_session(task.tid);
             xSemaphoreGive(self->_worker_ready_count);
@@ -171,31 +140,33 @@ esp_err_t XServer::handle_web_req(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    /// Read + URL-decode the POST body here, while req is still valid.
+    /// Read the raw (still URL-encoded) form value here, while req is valid.
     /// Bounded by FORM_BUF_SZ — this is the only req-touching work left,
     /// and it's exactly what esp_http_server expects a handler to do.
     /// takes 2K here, task.stack_size adjusted to 8K
-    /// consider auto decoded = std::make_unique<char[]>(FORM_BUF_SZ);
-    char decoded[FORM_BUF_SZ];
+    char   raw_val[FORM_BUF_SZ];
+    size_t raw_len = 0;
 
-    if (!_read_form(req, decoded, sizeof(decoded))) {
+    if (!_read_form(req, raw_val, sizeof(raw_val), raw_len)) {
         xSemaphoreGive(_worker_ready_count);
         return ESP_FAIL;   // read_form() already sent the error response
     }
 
     uint32_t tid = _open_session();
-#if 0
-    // parse_req() only touches _web (a thread-safe MBox), not req — safe here.
-    if (!_parse_req(tid, decoded)) {
-        _close_session(tid);
-        xSemaphoreGive(_worker_ready_count);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Queue full");
-        return ESP_FAIL;
+
+    /// Decode + split + enqueue to Forth right here, synchronously, on the
+    /// shared httpd task. Bounded by a total per-submission time budget
+    /// (SUBMIT_BUDGET_MS), not a per-line one — so a backed-up Forth queue
+    /// can only ever cost this one fixed window, regardless of how many
+    /// lines were submitted, rather than scaling with line count.
+    size_t lc = 0, lc_total = 0;
+    if (!_decode_and_enqueue(tid, raw_val, raw_len, SUBMIT_BUDGET_MS, lc, lc_total)) {
+        _report_trunc(tid, lc, lc_total);
     }
-#endif
-    // Hand off only plain values. No req pointer crosses the task boundary.
+
+    // Hand off only plain values. No buffer, no req pointer crosses the
+    // task boundary — the worker only owns streaming the response back.
     AsyncReqTask task{ req->handle, sockfd, tid };
-    memcpy(task.decoded, decoded, sizeof(decoded));
     if (xQueueSend(_async_queue, &task, pdMS_TO_TICKS(100)) != pdTRUE) {
         ERR("xsvr> async queue full, request rejected");
         _close_session(tid);
@@ -208,7 +179,7 @@ esp_err_t XServer::handle_web_req(httpd_req_t *req) {
     return ESP_OK;
 }
 
-bool XServer::_read_form(httpd_req_t *req, char *out, size_t out_sz) {
+bool XServer::_read_form(httpd_req_t *req, char *out, size_t out_sz, size_t &out_len) {
     int total = req->content_len;
     if (total <= 0 || total >= FORM_BUF_SZ) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad Parameters");
@@ -244,36 +215,84 @@ bool XServer::_read_form(httpd_req_t *req, char *out, size_t out_sz) {
     const char *amp  = strchr(pos, '&');
     size_t      vlen = amp ? (size_t)(amp - pos) : strlen(pos);
 
-    _url_decode(pos, vlen, out, out_sz);
+    // Copy out the raw, still-URL-encoded slice as-is — decoding happens
+    // later, line-by-line, in _decode_and_enqueue(). `vlen <= total`
+    // and `total < FORM_BUF_SZ` (checked above), so this always fits.
+    if (vlen >= out_sz) vlen = out_sz - 1;   // defensive; should never trigger
+    memcpy(out, pos, vlen);
+    out[vlen] = '\0';
+    out_len   = vlen;
     return true;
 }
 
-bool XServer::_parse_req(uint32_t tid, char *txt, size_t &lc, size_t &lc_total) {
+bool XServer::_decode_and_enqueue(uint32_t tid, const char *raw, size_t raw_len,
+                                   uint32_t budget_ms, size_t &lc, size_t &lc_total) {
     lc = lc_total = 0;
-    bool ok = true;
+    bool     ok      = true;
+    uint32_t started = millis();
 
-    char *saveptr = nullptr;
-    char *line = strtok_r(txt, "\n", &saveptr);
-    while (line != nullptr) {
-        lc_total++;
-        if (ok) {
-            msg_web_t cmd {};
-            cmd.id  = tid;
-            cmd.eos = false;
-            size_t len = strlen(line);
-            if (len > QUE_BUF_SZ - 1) len = QUE_BUF_SZ - 1;
-            memcpy(cmd.buf, line, len);
+    auto hex = [](char h) -> int {
+        if (h >= '0' && h <= '9') return h - '0';
+        if (h >= 'a' && h <= 'f') return h - 'a' + 10;
+        if (h >= 'A' && h <= 'F') return h - 'A' + 10;
+        return -1;
+    };
 
-            if (_web->put_req_wait(cmd, pdMS_TO_TICKS(200))) {
-                DEBUG(" >> <%d>'%s'\n", (int)len, (char*)cmd.buf);
-                lc++;
-            } else {
-                LOG("_web->put_req failed: '%s'\n", (char*)cmd.buf);
-                ok = false;   // stop enqueuing, but keep counting remaining lines
+    // Small per-line accumulator (QUE_BUF_SZ, 128B) instead of ever
+    // materializing a full decoded transcript - decode, split on '\n', and
+    // enqueue in one streaming pass over the still-encoded input.
+    char   line[QUE_BUF_SZ];
+    size_t llen       = 0;
+    bool   overflowed = false;   // current line already hit QUE_BUF_SZ-1
+
+    auto flush_line = [&]() {
+        if (llen > 0) {           // mirrors strtok_r: empty segments don't count
+            lc_total++;
+            if (ok) {
+                uint32_t elapsed = millis() - started;
+                uint32_t left    = (elapsed < budget_ms) ? (budget_ms - elapsed) : 0;
+
+                msg_web_t cmd{};
+                cmd.id  = tid;
+                cmd.eos = false;
+                memcpy(cmd.buf, line, llen);
+
+                if (_web->put_req_wait(cmd, pdMS_TO_TICKS(left))) {
+                    DEBUG(" >> <%d>'%s'\n", (int)llen, (char*)cmd.buf);
+                    lc++;
+                } else {
+                    LOG("_web->put_req failed/budget exhausted: '%s'\n", (char*)cmd.buf);
+                    ok = false;   // stop enqueuing, but keep counting remaining lines
+                }
             }
         }
-        line = strtok_r(nullptr, "\n", &saveptr);
+        llen       = 0;
+        overflowed = false;
+    };
+
+    for (size_t i = 0; i < raw_len; ++i) {
+        char c = raw[i];
+        char d;
+        if (c == '+') {
+            d = ' ';
+        } else if (c == '%' && i + 2 < raw_len) {
+            int hi = hex(raw[i + 1]), lo = hex(raw[i + 2]);
+            if (hi >= 0 && lo >= 0) { d = (char)((hi << 4) | lo); i += 2; }
+            else                    { d = c; }
+        } else {
+            d = c;
+        }
+
+        if (d == '\n') { flush_line(); continue; }
+        if (d == '\r') continue;   // swallow bare CR (the other half of %0D%0A)
+
+        if (!overflowed) {
+            if (llen < QUE_BUF_SZ - 1) line[llen++] = d;
+            else                       overflowed   = true;  // drop rest of this line
+        }
     }
+    flush_line();   // trailing line with no terminating '\n'
+
     return ok;
 }
 
