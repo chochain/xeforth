@@ -12,10 +12,11 @@
 #include <esp_http_server.h>
 #include "xque.h"
 
-#define SES_BUF_SZ     512
-#define FORM_BUF_SZ    2048
-#define REQ_TIMEOUT_MS 5000
-#define WAIT_POLL_MS   50
+#define SES_BUF_SZ      512
+#define FORM_BUF_SZ     2048
+#define REQ_TIMEOUT_MS  5000
+#define WAIT_POLL_MS    50
+#define SUBMIT_BUDGET_MS 300   /// total time budget to enqueue one whole submission (not per-line)
 
 #define ASYNC_WORKER_COUNT 3
 #define ASYNC_QUEUE_LEN    3
@@ -56,10 +57,9 @@ struct SessionBuf {
 
 // Modified for ESP-IDF v4.x asynchronous queue handling
 struct AsyncReqTask {
-    httpd_handle_t hd;                    /// server handle
-    int            fd;                    /// client socket fd
-    uint32_t       tid;                   /// session id
-    char           decoded[FORM_BUF_SZ];  /// hard copy, no pointer passing
+    httpd_handle_t hd;   /// server handle
+    int            fd;   /// client socket fd
+    uint32_t       tid;  /// session id
 };
 
 class XServer {
@@ -87,9 +87,10 @@ private:
 
     /// web request handler
     esp_err_t handle_web_req(httpd_req_t *req);
-    bool      _read_form(httpd_req_t *req, char *out, size_t out_sz);
+    bool      _read_form(httpd_req_t *req, char *out, size_t out_sz, size_t &out_len);
     uint32_t  _open_session();
-    bool      _parse_req(uint32_t id, char *txt, size_t &lc, size_t &lc_total);
+    bool      _decode_and_enqueue(uint32_t tid, const char *raw, size_t raw_len,
+                                   uint32_t budget_ms, size_t &lc, size_t &lc_total);
     void      _close_session(uint32_t tid);
 
     /// web response handler
