@@ -22,11 +22,12 @@
 #define ASYNC_QUEUE_LEN    3
 
 struct SessionBuf {
-    size_t   head      = 0;
-    size_t   tail      = 0;
-    bool     is_done   = false;
-    uint32_t timestamp = 0;
-    uint8_t  data[SES_BUF_SZ];
+    size_t      head      = 0;
+    size_t      tail      = 0;
+    bool        is_done   = false;
+    uint32_t    timestamp = 0;
+    job_class_t cls       = JOB_DEMAND;  /// EXEC 8 workload class, set at _open_session()
+    uint8_t     data[SES_BUF_SZ];
 
     SemaphoreHandle_t notify = nullptr;
 
@@ -88,9 +89,7 @@ private:
     /// web request handler
     esp_err_t handle_web_req(httpd_req_t *req);
     bool      _read_form(httpd_req_t *req, char *out, size_t out_sz, size_t &out_len);
-    uint32_t  _open_session();
-    bool      _decode_and_enqueue(uint32_t tid, const char *raw, size_t raw_len,
-                                   uint32_t budget_ms, size_t &lc, size_t &lc_total);
+    uint32_t  _open_session(job_class_t cls);
     void      _close_session(uint32_t tid);
 
     /// web response handler
