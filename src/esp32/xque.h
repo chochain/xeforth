@@ -35,6 +35,13 @@ public:
     bool send_with_timeout(const T &item, TickType_t ticks) {
         return xQueueSend(_queue, &item, ticks) == pdPASS;
     }
+    /// Jumps ahead of everything already waiting (still behind whatever Forth
+    /// is mid-way through executing - this is queue priority, not preemption
+    /// of in-flight execution). Non-blocking by default: a job meant to cut
+    /// the line shouldn't itself wait for room to do so.
+    bool send_priority(const T &item, TickType_t ticks = 0) {
+        return xQueueSendToFront(_queue, &item, ticks) == pdPASS;
+    }
     bool receive_non_blocking(T &item) {
         return xQueueReceive(_queue, &item, 0) == pdPASS; // non-blocking pool
     }
@@ -56,7 +63,7 @@ public:
 // ==========================================
 // DESKTOP / SIMULATOR STL IMPLEMENTATION
 // ==========================================
-#include <queue>
+#include <deque>
 #include <mutex>
 #include <condition_variable>
 typedef uint32_t UBaseType_t;
@@ -65,7 +72,7 @@ typedef int32_t  BaseType_t;
 template <typename T>
 class XQueue {
 private:
-    std::queue<T>           _queue;
+    std::deque<T>            _queue;
     std::mutex              _mutex;
     std::condition_variable _cond_var;
     size_t                  _qsz;
@@ -77,27 +84,37 @@ public:
         std::unique_lock<std::mutex> lock(_mutex);
         if (_queue.size() >= _qsz) return false;
 
-        _queue.push(item);
+        _queue.push_back(item);
         _cond_var.notify_one();
         return true;
     }
     bool send_with_timeout(const T &item, TickType_t ticks) {
         std::unique_lock<std::mutex> lock(_mutex);
-        return _cond_var.wait_for(lock, [this]() { _queue.push(item); }, ticks);
+        return _cond_var.wait_for(lock, [this]() { _queue.push_back(item); }, ticks);
+    }
+    /// Jumps ahead of everything already waiting - see the ESP32 branch's
+    /// send_priority() for the semantics this mirrors.
+    bool send_priority(const T &item, TickType_t ticks = 0) {
+        std::unique_lock<std::mutex> lock(_mutex);
+        if (_queue.size() >= _qsz) return false;
+
+        _queue.push_front(item);
+        _cond_var.notify_one();
+        return true;
     }
 
     bool receive_non_blocking(T &item) {
         std::unique_lock<std::mutex> lock(_mutex);
         if (_queue.empty()) return false;
         item = _queue.front();
-        _queue.pop();
+        _queue.pop_front();
         return true;
     }
     void receive_blocking(T &item) {
         std::unique_lock<std::mutex> lock(_mutex);
         _cond_var.wait(lock, [this]() { return !_queue.empty(); });
         item = _queue.front();
-        _queue.pop();
+        _queue.pop_front();
     }
     /* Host/Simulator Fallbacks (Map directly to non-blocking) */
     bool send_from_isr(const T &item, BaseType_t *isr_priority) {
@@ -124,6 +141,9 @@ public:
 
     bool put_req(const ReqT &item) { return _req_q.send_non_blocking(item);    }
     bool put_rsp(const RspT &item) { return _rsp_q.send_non_blocking(item);    }
+    /// REALTIME lane: jumps ahead of everything already queued in this same
+    /// MBox. See XQueue::send_priority() for what this does and doesn't do.
+    bool put_req_priority(const ReqT &item) { return _req_q.send_priority(item); }
     bool get_req(ReqT &item)       { return _req_q.receive_non_blocking(item); }
     bool get_rsp(RspT &item)       { return _rsp_q.receive_non_blocking(item); }
     bool put_req_wait(const ReqT &item, TickType_t ticks) { return _req_q.send_with_timeout(item, ticks); }
