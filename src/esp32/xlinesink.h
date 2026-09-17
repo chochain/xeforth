@@ -1,21 +1,28 @@
+///
+/// @file
+/// @brief Web Reqeust to line processor
+///
+/// Decodes an application/x-www-form-urlencoded value one character at a
+/// time, splits it into QUE_BUF_SZ-capped lines on '\n', and enqueues each
+/// line to a xQueWeb
+///
+/// Note: REALTIME jobs jump the queue (put_req_priority),
+///       everything else waits up to a shared per-submission time budget.
+///
 #ifndef _XLINESINK_H
 #define _XLINESINK_H
 #include <Arduino.h>
 #include "xque.h"
-
-/// Decodes an application/x-www-form-urlencoded value one character at a
-/// time, splits it into QUE_BUF_SZ-capped lines on '\n', and enqueues each
-/// line to a xQueWeb — REALTIME jobs jump the queue (put_req_priority),
-/// everything else waits up to a shared per-submission time budget.
 ///
-/// One LineSink is built per submission (see XServer::_decode_and_enqueue).
+/// One LineSink is built per submission (see XServer::handle_web_req).
 /// It never materializes a full decoded transcript — only one QUE_BUF_SZ
 /// line lives at a time, which is the whole point of decoding this way
 /// instead of decoding into a full buffer and re-scanning it afterward.
+///
 class LineSink {
 public:
     LineSink(xQueWeb *web, uint32_t tid, job_class_t cls, uint32_t budget_ms)
-        : _web(web), _tid(tid), _cls(cls), _started(millis()), _budget_ms(budget_ms) {}
+        : _web(web), _tid(tid), _cls(cls), _timer(millis() + budget_ms) {}
 
     /// Decodes + enqueues `raw` (still URL-encoded, `raw_len` bytes).
     /// Returns false if a line failed to enqueue (queue full / budget
@@ -67,8 +74,8 @@ private:
         if (_llen > 0) {              // mirrors strtok_r: empty segments don't count
             _lc_total++;
             if (_ok) {
-                uint32_t   elapsed = millis() - _started;
-                TickType_t wait    = pdMS_TO_TICKS(elapsed < _budget_ms ? _budget_ms - elapsed : 0);
+                uint32_t   now  = millis();
+                TickType_t wait = pdMS_TO_TICKS(now < _timer ? _timer - now : 0);
                 if (!_enqueue(wait)) _ok = false;
             }
         }
@@ -99,8 +106,7 @@ private:
     xQueWeb     *_web;
     uint32_t     _tid;
     job_class_t  _cls;
-    uint32_t     _started;
-    uint32_t     _budget_ms;
+    uint32_t     _timer;
 
     bool   _ok       = true;
     size_t _lc       = 0;
