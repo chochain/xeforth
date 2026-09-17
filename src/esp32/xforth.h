@@ -5,6 +5,10 @@
 #include <Arduino.h>
 #include "xque.h"
 
+#define RSP_WAIT_MS 200   /// bounded wait for room in _web's response queue
+                           /// (feedback() is static/callback context, so this
+                           /// is a free constant rather than an instance field)
+
 extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
 
 class XForth {
@@ -21,8 +25,10 @@ private:
     // Thread-safe internal helper to tokenize and split compound string buffers
     void outer(uint32_t id, char *cmd);
     
-    // This internal worker function handles the actual execution logic
-    void handle_web_req();
+    // This internal worker function handles the actual execution logic.
+    // Blocks up to wait_ticks for the first request (waking immediately on
+    // arrival), then drains any backlog without blocking again.
+    void handle_web_req(TickType_t wait_ticks);
     void handle_ui_rsp();
     void run();
 
