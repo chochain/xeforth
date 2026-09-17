@@ -45,6 +45,13 @@ public:
     bool receive_non_blocking(T &item) {
         return xQueueReceive(_queue, &item, 0) == pdPASS; // non-blocking pool
     }
+    /// Blocks up to `ticks`, but returns the instant an item arrives rather
+    /// than waiting out the full window - use this instead of a fixed
+    /// vTaskDelay + non-blocking receive when a consumer needs both low
+    /// latency on arrival AND a guaranteed periodic wake-up (heartbeat).
+    bool receive_with_timeout(T &item, TickType_t ticks) {
+        return xQueueReceive(_queue, &item, ticks) == pdPASS;
+    }
     void receive_blocking(T &item) {
         xQueueReceive(_queue, &item, portMAX_DELAY);      /// MAX_DELAY => blocking
     }
@@ -66,8 +73,10 @@ public:
 #include <deque>
 #include <mutex>
 #include <condition_variable>
+#include <chrono>
 typedef uint32_t UBaseType_t;
 typedef int32_t  BaseType_t;
+typedef uint32_t TickType_t;   // simulator fallback: ticks == milliseconds, 1:1
 
 template <typename T>
 class XQueue {
@@ -90,7 +99,13 @@ public:
     }
     bool send_with_timeout(const T &item, TickType_t ticks) {
         std::unique_lock<std::mutex> lock(_mutex);
-        return _cond_var.wait_for(lock, [this]() { _queue.push_back(item); }, ticks);
+        bool got_room = _cond_var.wait_for(lock, std::chrono::milliseconds(ticks),
+                                            [this]() { return _queue.size() < _qsz; });
+        if (!got_room) return false;
+
+        _queue.push_back(item);
+        _cond_var.notify_one();
+        return true;
     }
     /// Jumps ahead of everything already waiting - see the ESP32 branch's
     /// send_priority() for the semantics this mirrors.
@@ -106,6 +121,18 @@ public:
     bool receive_non_blocking(T &item) {
         std::unique_lock<std::mutex> lock(_mutex);
         if (_queue.empty()) return false;
+        item = _queue.front();
+        _queue.pop_front();
+        return true;
+    }
+    /// Blocks up to `ticks` (treated as milliseconds here), returning the
+    /// instant an item arrives rather than waiting out the full window -
+    /// mirrors the ESP32 branch's receive_with_timeout().
+    bool receive_with_timeout(T &item, TickType_t ticks) {
+        std::unique_lock<std::mutex> lock(_mutex);
+        bool got = _cond_var.wait_for(lock, std::chrono::milliseconds(ticks),
+                                       [this]() { return !_queue.empty(); });
+        if (!got) return false;
         item = _queue.front();
         _queue.pop_front();
         return true;
@@ -141,13 +168,20 @@ public:
 
     bool put_req(const ReqT &item) { return _req_q.send_non_blocking(item);    }
     bool put_rsp(const RspT &item) { return _rsp_q.send_non_blocking(item);    }
+    /// Bounded wait for room in the response queue, mirroring put_req_wait -
+    /// a dropped response here is dropped output the student would otherwise
+    /// see, not just a log line, so it's worth waiting briefly rather than
+    /// failing immediately.
+    bool put_req_wait(const ReqT &item, TickType_t ticks) { return _req_q.send_with_timeout(item, ticks); }
+    bool put_rsp_wait(const RspT &item, TickType_t ticks) { return _rsp_q.send_with_timeout(item, ticks); }
     /// REALTIME lane: jumps ahead of everything already queued in this same
     /// MBox. See XQueue::send_priority() for what this does and doesn't do.
     bool put_req_priority(const ReqT &item) { return _req_q.send_priority(item); }
     bool get_req(ReqT &item)       { return _req_q.receive_non_blocking(item); }
     bool get_rsp(RspT &item)       { return _rsp_q.receive_non_blocking(item); }
-    bool put_req_wait(const ReqT &item, TickType_t ticks) { return _req_q.send_with_timeout(item, ticks); }
-    void wait_for_req(ReqT &item)   { _req_q.receive_blocking(item);           }
+    /// Blocks up to `ticks` for the next request, waking immediately on
+    /// arrival - see XQueue::receive_with_timeout().
+    bool wait_for_req(ReqT &item, TickType_t ticks) { return _req_q.receive_with_timeout(item, ticks); }
     void wait_for_rsp(RspT &item)   { _rsp_q.receive_blocking(item);           }
     /* ISR Context API */
     bool isr_put_req(const ReqT &item, BaseType_t *isr_priority) { 
