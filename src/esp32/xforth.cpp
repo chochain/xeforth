@@ -6,8 +6,8 @@ uint32_t XForth::_req_id = 0;
 bool XForth::begin(xQueWeb *web, xQueUI *ui, int priority) {
     if (web == NULL) return false;
     if (_web != nullptr) {
-        LOG("XForth::begin() called twice - _web/_ui/_req_id are static and "
-            "shared across instances, a second instance will corrupt state\n");
+        ERR("XForth::begin() called twice - _web/_ui/_req_id are static and "
+            "shared across instances, a second instance will corrupt state");
         return false;
     }
     _web = web;
@@ -33,7 +33,7 @@ void XForth::handle_web_req(TickType_t wait_ticks) {
     // Block for the first request up to wait_ticks instead of a fixed
     // vTaskDelay every cycle - a line landing in _web wakes this task
     // immediately rather than waiting for the next heartbeat.
-    if (!_web->wait_for_req_timeout(req, wait_ticks)) return;  // nothing arrived this cycle
+    if (!_web->wait_for_req(req, wait_ticks)) return;  // nothing arrived this cycle
 
     do {
         _req_id = req.id;      // capture session id, CC:DEBUG static => dynamic
@@ -47,7 +47,9 @@ void XForth::handle_web_req(TickType_t wait_ticks) {
         rsp.id     = _req_id;
         rsp.buf[0] = 0;
         rsp.eos    = true;
-        _web->put_rsp(rsp);
+        if (!_web->put_rsp_wait(rsp, pdMS_TO_TICKS(RSP_WAIT_MS*4))) {
+            ERR("xforth#handle_web_req failed to hangup");
+        }
     } while (_web->get_req(req));   // drain any backlog without blocking again
 }
 
