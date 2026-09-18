@@ -1,3 +1,7 @@
+///
+/// @file
+/// @brief Forth VM proxy class
+///
 #ifndef _XFORTH_H
 #define _XFORTH_H
 
@@ -20,8 +24,9 @@ private:
     TaskHandle_t    _task;                 ///< task id
     uint32_t        _tick;                 ///< heartbeat_delay_ms
 
-    static void feedback(int i, const char *rst);
 
+    static void feedback(int i, const char *rst);
+    
     // Thread-safe internal helper to tokenize and split compound string buffers
     void outer(uint32_t id, char *cmd);
     

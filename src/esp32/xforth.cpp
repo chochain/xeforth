@@ -1,3 +1,7 @@
+///
+/// @file
+/// @brief Forth VM proxy class
+///
 #include "xforth.h"
 
 xQueWeb  *XForth::_web   = nullptr;
