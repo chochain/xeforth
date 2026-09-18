@@ -31,6 +31,7 @@ bool XForth::begin(xQueWeb *web, xQueUI *ui, int priority) {
     return (xReturned == pdPASS);
 }
 
+#if 0 // actor
 void XForth::handle_web_req(TickType_t wait_ticks) {
     msg_web_t req;
 
@@ -72,7 +73,7 @@ void XForth::run() {
         handle_ui_rsp();
     }
 }
-
+#endif // actor
 void XForth::feedback(int len, const char *rst) {
     static msg_gui_t gui_req;
     static msg_web_t web_rsp;
