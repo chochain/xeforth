@@ -8,12 +8,6 @@
 
 #define FORM_BUF_SZ 2048
 
-typedef enum {
-    JOB_BATCH    = 0,
-    JOB_DEMAND   = 1,
-    JOB_REALTIME = 2
-} job_class_t;
-
 class XServer {
 private:
     uint16_t       _port;
