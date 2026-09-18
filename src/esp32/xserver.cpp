@@ -94,19 +94,20 @@ public:
     // Receives packets out of the Central sorting office conveyor belt
     void receive(const ActorMsg &msg) override {
         switch (msg.type) {
-            case MSG_FORTH_FEEDBACK:
-                send_chunk(msg.buf, strlen(msg.buf)); // Passes data along
-                break;
-            case MSG_FORTH_DONE:
-                terminate_session(); // Cleans up early
-                break;
-            case MSG_SESSION_TIMEOUT: // 💥 Caught here if network drops out completely
-                const char* err = "\r\n[SYSTEM] Connection closed due to 30s inactivity.\r\n";
-                send_chunk(err, strlen(err));
-                terminate_session();
-                break;
-            default:
-                break;
+        case MSG_FORTH_FEEDBACK:
+            send_chunk(msg.buf, strlen(msg.buf)); // Passes data along
+            break;
+        case MSG_FORTH_DONE:
+            terminate_session(); // Cleans up early
+            break;
+        case MSG_SESSION_TIMEOUT: {// 💥 Caught here if network drops out completely
+            const char* err = "\r\n[SYSTEM] Connection closed due to 30s inactivity.\r\n";
+            send_chunk(err, strlen(err));
+            terminate_session();
+        } break;
+        default:
+            Serial.printf("unknown msg.type=%d\n", msg.type);
+            break;
         }
     }
 };
