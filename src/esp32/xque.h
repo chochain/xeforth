@@ -168,21 +168,18 @@ public:
 
     bool put_req(const ReqT &item) { return _req_q.send_non_blocking(item);    }
     bool put_rsp(const RspT &item) { return _rsp_q.send_non_blocking(item);    }
+    bool get_req(ReqT &item)       { return _req_q.receive_non_blocking(item); }
+    bool get_rsp(RspT &item)       { return _rsp_q.receive_non_blocking(item); }
+    bool put_req_priority(const ReqT &item) { return _req_q.send_priority(item); } // priority mail
     /// Bounded wait for room in the response queue, mirroring put_req_wait -
     /// a dropped response here is dropped output the student would otherwise
     /// see, not just a log line, so it's worth waiting briefly rather than
     /// failing immediately.
     bool put_req_wait(const ReqT &item, TickType_t ticks) { return _req_q.send_with_timeout(item, ticks); }
     bool put_rsp_wait(const RspT &item, TickType_t ticks) { return _rsp_q.send_with_timeout(item, ticks); }
-    /// REALTIME lane: jumps ahead of everything already queued in this same
-    /// MBox. See XQueue::send_priority() for what this does and doesn't do.
-    bool put_req_priority(const ReqT &item) { return _req_q.send_priority(item); }
-    bool get_req(ReqT &item)       { return _req_q.receive_non_blocking(item); }
-    bool get_rsp(RspT &item)       { return _rsp_q.receive_non_blocking(item); }
-    /// Blocks up to `ticks` for the next request, waking immediately on
-    /// arrival - see XQueue::receive_with_timeout().
     bool wait_for_req(ReqT &item, TickType_t ticks) { return _req_q.receive_with_timeout(item, ticks); }
     void wait_for_rsp(RspT &item)   { _rsp_q.receive_blocking(item);           }
+    
     /* ISR Context API */
     bool isr_put_req(const ReqT &item, BaseType_t *isr_priority) { 
         return _req_q.send_from_isr(item, isr_priority); 
