@@ -86,7 +86,12 @@ void XGL::receive(const ActorMsg &msg) {
 bool XGL::begin(int priority) {
     BaseType_t xReturned = xTaskCreatePinnedToCore(
         [](void *pv) { static_cast<XGL*>(pv)->run(); },
-        "LVGL_Render_Task", 8192, (void*)this, priority, &_task, 1 // Pinned strictly to Core 1
+        "LVGL_Render_Task",
+        8192,
+        (void*)this,
+        priority,
+        &_task,
+        1                  // Pinned strictly to Core 1
     );
     return (xReturned == pdPASS);
 }
