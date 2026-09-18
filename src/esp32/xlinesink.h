@@ -22,7 +22,7 @@
 class LineSink {
 public:
     LineSink(xQueWeb *web, uint32_t tid, job_class_t cls, uint32_t budget_ms)
-        : _web(web), _tid(tid), _cls(cls), _timer(millis() + budget_ms) {}
+        : _web(web), _tid(tid), _cls(cls), _timeup(millis() + budget_ms) {}
 
     /// Decodes + enqueues `raw` (still URL-encoded, `raw_len` bytes).
     /// Returns false if a line failed to enqueue (queue full / budget
@@ -75,7 +75,7 @@ private:
             _lc_total++;
             if (_ok) {
                 uint32_t   now  = millis();
-                TickType_t wait = pdMS_TO_TICKS(now < _timer ? _timer - now : 0);
+                TickType_t wait = pdMS_TO_TICKS(now < _timeup ? _timeup - now : 0);
                 if (!_enqueue(wait)) _ok = false;
             }
         }
@@ -106,7 +106,7 @@ private:
     xQueWeb     *_web;
     uint32_t     _tid;
     job_class_t  _cls;
-    uint32_t     _timer;
+    uint32_t     _timeup;
 
     bool   _ok       = true;
     size_t _lc       = 0;
