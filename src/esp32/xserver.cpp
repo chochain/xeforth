@@ -90,6 +90,14 @@ void XServer::setup() {
     config.core_id           = 0;
     config.max_open_sockets  = ASYNC_WORKER_COUNT + 2;
     config.stack_size        = 8192;        /// budget for decode buffer
+    // Default is 5s, applied per underlying send() call. _stream_session()
+    // can make several send calls per session (chunk header/body/trailer,
+    // open/close wrappers) - against a hung client (TCP window full, socket
+    // still open) those can each independently wait out the full timeout,
+    // stacking well past REQ_TIMEOUT_MS (our intended per-session ceiling)
+    // before a stuck worker is detected and freed. Tightened here so one
+    // hung browser can't tie up a worker slot for that long.
+    config.send_wait_timeout = 2;
 
     if (httpd_start(&_httpd, &config) != ESP_OK) {
         ERR("xsvr> httpd_start failed");
@@ -270,6 +278,20 @@ void XServer::handle_rsp() {
     }
 }
 
+namespace {
+    // Sends one complete HTTP chunk (length header + payload + trailing
+    // CRLF). Returns false the moment any part fails, so the caller can
+    // bail out immediately instead of attempting further sends against a
+    // socket that's already known to be broken or hung.
+    bool send_chunk(httpd_handle_t hd, int fd, const char *data, size_t len) {
+        char header[32];
+        snprintf(header, sizeof(header), "%X\r\n", (unsigned)len);
+        return httpd_socket_send(hd, fd, header, strlen(header), 0) > 0
+            && httpd_socket_send(hd, fd, data, len, 0) > 0
+            && httpd_socket_send(hd, fd, "\r\n", 2, 0) > 0;
+    }
+}
+
 // Completely reworked to use lower level socket chunking for custom async delivery
 void XServer::_stream_session(httpd_handle_t hd, int fd, uint32_t tid) {
     xSemaphoreTake(_mutex, portMAX_DELAY);
@@ -282,15 +304,11 @@ void XServer::_stream_session(httpd_handle_t hd, int fd, uint32_t tid) {
     if (httpd_socket_send(hd, fd, initial_chunks, strlen(initial_chunks), 0) <= 0) { return; }
 
     const char* open_wrapper = "<div class='rsp-entry'>";
-    char chunk_header[32];       // 🚀 FIX 2: Increased buffer footprint size to safely parse lengths
-
-    snprintf(chunk_header, sizeof(chunk_header), "%X\r\n", strlen(open_wrapper));
-    httpd_socket_send(hd, fd, chunk_header, strlen(chunk_header), 0);
-    httpd_socket_send(hd, fd, open_wrapper, strlen(open_wrapper), 0);
-    httpd_socket_send(hd, fd, "\r\n", 2, 0);
+    if (!send_chunk(hd, fd, open_wrapper, strlen(open_wrapper))) return;  // socket already dead - nothing left worth sending
 
     uint8_t  out[SES_BUF_SZ];
-    uint32_t started = millis();
+    uint32_t timeup = millis() + REQ_TIMEOUT_MS;
+    bool     alive  = true;   // false once a send actually fails (socket broken), vs. a normal done/timeout exit
     while (true) {
         xSemaphoreTake(ses.notify, pdMS_TO_TICKS(WAIT_POLL_MS));
         xSemaphoreTake(_mutex, portMAX_DELAY);
@@ -298,31 +316,22 @@ void XServer::_stream_session(httpd_handle_t hd, int fd, uint32_t tid) {
         bool   done = ses.is_done && ses.available() == 0;
         xSemaphoreGive(_mutex);
 
-        if (n > 0) {
-            snprintf(chunk_header, sizeof(chunk_header), "%X\r\n", n);
-            if (httpd_socket_send(hd, fd, chunk_header, strlen(chunk_header), 0) <= 0 ||
-                httpd_socket_send(hd, fd, (const char*)out, n, 0) <= 0 ||
-                httpd_socket_send(hd, fd, "\r\n", 2, 0) <= 0) { break; }
-        }
+        if (n > 0 && !send_chunk(hd, fd, (const char*)out, n)) { alive = false; break; }
         if (done) break;
 
-        if (millis() - started > REQ_TIMEOUT_MS) {
+        if (millis() < timeup) {
             const char* timeout_msg = "[Forth execution timeout]";
-            snprintf(chunk_header, sizeof(chunk_header), "%X\r\n", strlen(timeout_msg));
-            httpd_socket_send(hd, fd, chunk_header, strlen(chunk_header), 0);
-            httpd_socket_send(hd, fd, timeout_msg, strlen(timeout_msg), 0);
-            httpd_socket_send(hd, fd, "\r\n", 2, 0);
+            send_chunk(hd, fd, timeout_msg, strlen(timeout_msg));  // best-effort, session is ending regardless
             break;
         }
     }
-    // Send closing layout wrappers and terminal chunk signals safely
+    if (!alive) return;  // socket already confirmed broken - closing sequence would just re-time-out for nothing
+
+    // Send closing layout wrappers and terminal chunk signals
     const char* final_wrapper = "</div><br/>";
-    snprintf(chunk_header, sizeof(chunk_header), "%X\r\n", strlen(final_wrapper));
-    httpd_socket_send(hd, fd, chunk_header, strlen(chunk_header), 0);
-    httpd_socket_send(hd, fd, final_wrapper, strlen(final_wrapper), 0);
-    httpd_socket_send(hd, fd, "\r\n", 2, 0);
-    // Final end-of-transfer empty chunk marker
-    httpd_socket_send(hd, fd, "0\r\n\r\n", 5, 0);
+    if (send_chunk(hd, fd, final_wrapper, strlen(final_wrapper))) {
+        httpd_socket_send(hd, fd, "0\r\n\r\n", 5, 0);   // final end-of-transfer marker, best-effort
+    }
 }
 
 void XServer::_report_trunc(uint32_t tid, size_t lc, size_t lc_total) {
