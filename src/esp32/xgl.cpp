@@ -1,6 +1,6 @@
 ///
 /// @file
-/// @brief ESP32-S3 4848S040 LVGL renderer interface
+/// @brief ESP32-S3 4848S040 (ST7701S) LVGL Renderer
 ///
 #include "xgl.h"
 #include <esp_heap_caps.h>

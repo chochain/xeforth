@@ -1,3 +1,7 @@
+///
+/// @file
+/// @brief ESP32-S3 4848S040 LVGL renderer interface
+///
 #ifndef _XGL_H
 #define _XGL_H
 #include "xque.h"
