@@ -1,120 +1,67 @@
-///
-/// @file
-/// @brief Web Reqeust to line processor
-///
-/// Decodes an application/x-www-form-urlencoded value one character at a
-/// time, splits it into QUE_BUF_SZ-capped lines on '\n', and enqueues each
-/// line to a xQueWeb
-///
-/// Note: REALTIME jobs jump the queue (put_req_priority),
-///       everything else waits up to a shared per-submission time budget.
-///
+/// -*- mode: c++ -*-
 #ifndef _XLINESINK_H
 #define _XLINESINK_H
-#include <Arduino.h>
-#include "xque.h"
-///
-/// One LineSink is built per submission (see XServer::handle_web_req).
-/// It never materializes a full decoded transcript — only one QUE_BUF_SZ
-/// line lives at a time, which is the whole point of decoding this way
-/// instead of decoding into a full buffer and re-scanning it afterward.
-///
+
+#include "xactor.h"
+#include "xserver.h"
+
 class LineSink {
-public:
-    LineSink(xQueWeb *web, uint32_t tid, job_class_t cls, uint32_t budget_ms)
-        : _web(web), _tid(tid), _cls(cls), _timeup(millis() + budget_ms) {}
-
-    /// Decodes + enqueues `raw` (still URL-encoded, `raw_len` bytes).
-    /// Returns false if a line failed to enqueue (queue full / budget
-    /// exhausted) — lines already sent still count in lc()/lc_total().
-    bool run(const char *raw, size_t raw_len) {
-        for (size_t i = 0; i < raw_len; ++i) {
-            char d = _decode_one(raw, raw_len, i);
-            if (d == '\n') { _flush(); continue; }
-            if (d == '\r') continue;   // swallow bare CR (the other half of %0D%0A)
-            _append(d);
-        }
-        _flush();   // trailing line with no terminating '\n'
-        return _ok;
-    }
-
-    size_t lc()       const { return _lc; }
-    size_t lc_total() const { return _lc_total; }
-
 private:
-    static int _hex_nibble(char h) {
-        if (h >= '0' && h <= '9') return h - '0';
-        if (h >= 'a' && h <= 'f') return h - 'a' + 10;
-        if (h >= 'A' && h <= 'F') return h - 'A' + 10;
-        return -1;
+    uint32_t    _session_id;
+    job_class_t _cls;
+
+    char decode_char(const char *src) {
+        char a = src[0];
+        char b = src[1];
+        a = (a >= 'A' && a <= 'F') ? a - 'A' + 10 : (a >= 'a' && a <= 'f') ? a - 'a' + 10 : a - '0';
+        b = (b >= 'A' && b <= 'F') ? b - 'A' + 10 : (b >= 'a' && b <= 'f') ? b - 'a' + 10 : b - '0';
+        return (char)((a << 4) | b);
     }
 
-    // Decodes one logical character of a application/x-www-form-urlencoded
-    // value starting at raw[i], advancing i past any %XX it consumes.
-    static char _decode_one(const char *raw, size_t raw_len, size_t &i) {
-        char c = raw[i];
-        if (c == '+') return ' ';
-        if (c == '%' && i + 2 < raw_len) {
-            int hi = _hex_nibble(raw[i + 1]), lo = _hex_nibble(raw[i + 2]);
-            if (hi >= 0 && lo >= 0) {
-                i += 2;
-                return (char)((hi << 4) | lo);
+public:
+    LineSink(uint32_t session_id, job_class_t cls) : _session_id(session_id), _cls(cls) {}
+
+    void split_and_stream(const char* raw_src, size_t src_len) {
+        char   line_buf[QUE_BUF_SZ];
+        size_t w_idx = 0;
+        size_t r_idx = 0;
+
+        while (r_idx < src_len) {
+            char c = raw_src[r_idx];
+            if (c == '%') {
+                if (r_idx + 2 < src_len) {
+                    c = decode_char(&raw_src[r_idx + 1]);
+                    r_idx += 2;
+                }
+            } else if (c == '+') {
+                c = ' ';
             }
-        }
-        return c;
-    }
+            r_idx++;
 
-    void _append(char d) {
-        if (_overflowed) return;
-        if (_llen < QUE_BUF_SZ - 1) _line[_llen++] = d;
-        else                        _overflowed    = true;  // drop rest of this line
-    }
-
-    void _flush() {
-        if (_llen > 0) {              // mirrors strtok_r: empty segments don't count
-            _lc_total++;
-            if (_ok) {
-                uint32_t   now  = millis();
-                TickType_t wait = pdMS_TO_TICKS(now < _timeup ? _timeup - now : 0);
-                if (!_enqueue(wait)) _ok = false;
+            if (c == '\r') continue;
+            if (c == '\n') {
+                if (w_idx > 0) {
+                    line_buf[w_idx] = '\0';
+                    ActorMsg msg{ MSG_FORTH_EXEC, 1, (int)_session_id, nullptr, "" };
+                    strncpy(msg.buf, line_buf, QUE_BUF_SZ);
+                    Sys.send(msg);
+                    w_idx = 0;
+                }
+                continue;
             }
+            if (w_idx < (QUE_BUF_SZ - 1)) line_buf[w_idx++] = c;
         }
-        _llen       = 0;
-        _overflowed = false;
-    }
 
-    // Builds one msg_web_t and sends it down the lane its job class calls
-    // for. REALTIME jumps the queue (see XQueue::send_priority); everything
-    // else waits up to wait_ticks for room.
-    bool _enqueue(TickType_t wait_ticks) {
-        msg_web_t cmd{};
-        cmd.id  = _tid;
-        cmd.eos = false;
-        memcpy(cmd.buf, _line, _llen);
-
-        bool sent = (_cls == JOB_REALTIME) ? _web->put_req_priority(cmd)
-                                            : _web->put_req_wait(cmd, wait_ticks);
-        if (sent) {
-            DEBUG(" >> <%d>'%s'\n", (int)_llen, (char*)cmd.buf);
-            _lc++;
-            return true;
+        if (w_idx > 0) {
+            line_buf[w_idx] = '\0';
+            ActorMsg msg{ MSG_FORTH_EXEC, 1, (int)_session_id, nullptr, "" };
+            strncpy(msg.buf, line_buf, QUE_BUF_SZ);
+            Sys.send(msg);
         }
-        LOG("_web->put_req failed/budget exhausted: '%s'\n", (char*)cmd.buf);
-        return false;
+
+        ActorMsg eos{ MSG_FORTH_DONE, 1, (int)_session_id, nullptr, "" };
+        Sys.send(eos);
     }
-
-    xQueWeb     *_web;
-    uint32_t     _tid;
-    job_class_t  _cls;
-    uint32_t     _timeup;
-
-    bool   _ok       = true;
-    size_t _lc       = 0;
-    size_t _lc_total = 0;
-
-    char   _line[QUE_BUF_SZ];
-    size_t _llen       = 0;
-    bool   _overflowed = false;
 };
 
 #endif // _XLINESINK_H
