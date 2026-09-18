@@ -12,6 +12,7 @@
 #include <TAMC_GT911.h>
 #include <Wire.h>
 #include <lvgl.h>
+#include "xactor.h"
 
 #define SCREEN_WIDTH  480
 #define SCREEN_HEIGHT 480
