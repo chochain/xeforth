@@ -21,12 +21,12 @@
 #define TOUCH_INT  4     // B0, might blip on start up
 #define TOUCH_RST  5     // B1
 
-class XGL {
+class XGL : public BaseActor {
 private:
     uint32_t              _width;
     uint32_t              _height;
-    xQueUI                *_ui;
     TaskHandle_t          _task;
+    QueueHandle_t         _mailbox; // Fast, lock-free localized queue for Core 1 delivery
     
     // 📺 Embedded Arduino_GFX Hardware Display Infrastructure Components
     Arduino_DataBus       *_bus;
@@ -46,17 +46,18 @@ private:
     
     // Internal hardware initialization method
     void init_hardware();
-    void handle_req();
+    void process_mailbox();
     void update_chart();
     void parse(char *cmd);
     void term_print(const char *txt, lv_color_t textColor);
 
 public:
-    XGL(uint32_t width = SCREEN_WIDTH, uint32_t height = SCREEN_HEIGHT) :
+    XGL(uint32_t actor_id, uint32_t width = SCREEN_WIDTH, uint32_t height = SCREEN_HEIGHT) :
+        BaseActor(actor_id),
         _width(width),
         _height(height),
-        _ui(NULL),
         _task(NULL),
+        _mailbox(NULL),
         _bus(NULL),
         _panel(NULL),
         _display(NULL),
@@ -65,9 +66,12 @@ public:
         _term_log(NULL),
         _chart(NULL),
         _cpu_series(NULL),
-        _ram_series(NULL) {}
+        _ram_series(NULL) {
+        _mailbox = xQueueCreate(10, sizeof(ActorMsg));
+    }
 
-    bool begin(xQueUI *ui, int priority);
+    void receive(const ActorMsg &msg) override;
+    bool begin(int priority);
 };
 
 #else // !(ARDUINO || ESP32)
