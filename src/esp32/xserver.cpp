@@ -1,5 +1,6 @@
 /// -*- mode: c++ -*-
 #include "xserver.h"
+#include "xserver_actor.h"
 #include "xactor.h"
 #include "xlinesink.h"
 
@@ -38,79 +39,6 @@ static const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 </body>
 </html>
 )XX";
-
-class SessionActor : public BaseActor {
-private:
-    int            _fd;
-    httpd_handle_t _hd;
-    bool           _headers_sent;
-
-public:
-    SessionActor(uint32_t actor_id, int client_fd, httpd_handle_t server_hd) 
-        : BaseActor(actor_id), _fd(client_fd), _hd(server_hd), _headers_sent(false) {}
-
-    // 🚀 HERE IT IS: Streams raw text slices dynamically over the HTTP socket
-    void send_chunk(const char* data, size_t len) {
-        if (!_headers_sent) {
-            const char* headers =
-                "HTTP/1.1 200 OK\r\n"
-                "Content-Type: text/html\r\n"
-                "Transfer-Encoding: chunked\r\n"
-                "Connection: keep-alive\r\n\r\n";
-            httpd_socket_send(_hd, _fd, headers, strlen(headers), 0);
-            
-            const char* wrapper = "<div class='rsp-entry'>";
-            char hbuf[32];
-            snprintf(hbuf, sizeof(hbuf), "%X\r\n", strlen(wrapper));
-            httpd_socket_send(_hd, _fd, hbuf, strlen(hbuf), 0);
-            httpd_socket_send(_hd, _fd, wrapper, strlen(wrapper), 0);
-            httpd_socket_send(_hd, _fd, "\r\n", 2, 0);
-            _headers_sent = true;
-        }
-        if (len > 0) {
-            char hbuf[32];
-            snprintf(hbuf, sizeof(hbuf), "%X\r\n", len);
-            httpd_socket_send(_hd, _fd, hbuf, strlen(hbuf), 0);
-            httpd_socket_send(_hd, _fd, data, len, 0);
-            httpd_socket_send(_hd, _fd, "\r\n", 2, 0);
-        }
-    }
-
-    // 🚀 HERE IT IS: Closes chunk boundaries and unregisters from the post office
-    void terminate_session() {
-        const char* final_wrapper = "</div><br/>";
-        char hbuf[32];
-        snprintf(hbuf, sizeof(hbuf), "%X\r\n", strlen(final_wrapper));
-        httpd_socket_send(_hd, _fd, hbuf, strlen(hbuf), 0);
-        httpd_socket_send(_hd, _fd, final_wrapper, strlen(final_wrapper), 0);
-        httpd_socket_send(_hd, _fd, "\r\n", 2, 0);
-        
-        httpd_socket_send(_hd, _fd, "0\r\n\r\n", 5, 0);
-        
-        Sys.unregister_actor(this->id);
-        delete this; // Clean up its own memory footprints safely
-    }
-
-    // Receives packets out of the Central sorting office conveyor belt
-    void receive(const ActorMsg &msg) override {
-        switch (msg.type) {
-        case MSG_FORTH_FEEDBACK:
-            send_chunk(msg.buf, strlen(msg.buf)); // Passes data along
-            break;
-        case MSG_FORTH_DONE:
-            terminate_session(); // Cleans up early
-            break;
-        case MSG_SESSION_TIMEOUT: {// 💥 Caught here if network drops out completely
-            const char* err = "\r\n[SYSTEM] Connection closed due to 30s inactivity.\r\n";
-            send_chunk(err, strlen(err));
-            terminate_session();
-        } break;
-        default:
-            Serial.printf("unknown msg.type=%d\n", msg.type);
-            break;
-        }
-    }
-};
 
 static uint32_t last_active_session = 0;
 
@@ -165,29 +93,35 @@ void XServer::setup() {
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = _port;
-    config.core_id = 0;
-    config.stack_size = 4096; // Lightweight routing thread stack footprint
+    config.core_id     = 0;
+    config.stack_size  = 4096; // Lightweight routing thread stack footprint
 
     if (httpd_start(&_httpd, &config) != ESP_OK) return;
 
     httpd_uri_t root_uri = {
-        .uri = "/", .method = HTTP_GET,
+        .uri = "/",
+        .method = HTTP_GET,
         .handler = [](httpd_req_t *req) {
             httpd_resp_set_type(req, "text/html");
             return httpd_resp_send(req, HTML_INDEX, HTTPD_RESP_USE_STRLEN);
-        }, .user_ctx = this
+        },
+        .user_ctx = this
     };
     httpd_register_uri_handler(_httpd, &root_uri);
 
     httpd_uri_t exec_uri = {
-        .uri = "/execute", .method = HTTP_POST,
-        .handler = execute_handler, .user_ctx = this
+        .uri = "/execute",
+        .method = HTTP_POST,
+        .handler = execute_handler,
+        .user_ctx = this
     };
     httpd_register_uri_handler(_httpd, &exec_uri);
 
     httpd_uri_t abort_uri = {
-        .uri = "/abort", .method = HTTP_POST,
-        .handler = abort_handler, .user_ctx = this
+        .uri = "/abort",
+        .method = HTTP_POST,
+        .handler = abort_handler,
+        .user_ctx = this
     };
     httpd_register_uri_handler(_httpd, &abort_uri);
 }
