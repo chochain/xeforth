@@ -17,6 +17,8 @@ const char *APP_VERSION = "xeForth v1.0";
 ///
 ///> interface to core module
 ///
+#include "xactor.h"
+#include "xforth_actor.h"
 #include "xforth.h"              ///< Forth VM interface
 #include "xserver.h"             ///< ESP32 Async Web Server
 #include "xgl.h"                 ///< UI, LVGL+Touch interface
