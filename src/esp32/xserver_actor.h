@@ -1,3 +1,7 @@
+/// -*- mode: c++ -*-
+#ifndef _XSERVER_ACTOR_H
+#define _XSERVER_ACTOR_H
+
 #include "xactor.h"
 
 #define REQ_TIMEOUT_MS 5000
@@ -24,7 +28,11 @@ private:
 
     void send_chunk(const char* data, size_t len) {
         if (!_headers_sent) {
-            const char* headers = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n";
+            const char* headers =
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html\r\n"
+                "Transfer-Encoding: chunked\r\n"
+                "Connection: keep-alive\r\n\r\n";
             httpd_socket_send(_hd, _fd, headers, strlen(headers), 0);
             
             const char* wrapper = "<div class='rsp-entry'>";
@@ -104,39 +112,42 @@ public:
 
     void receive(const ActorMsg &msg) override {
         switch (msg.type) {
-            case MSG_WEB_SUBMIT: {
-                // Ignite timeout clock ticking immediately upon forwarding down to pipeline
-                if (_timeout_timer != nullptr) {
-                    xTimerStart(_timeout_timer, 0);
-                }
-
-                ActorMsg forward = msg;
-                forward.type = MSG_FORTH_EXEC;
-                forward.target_id = 1; // Direct path routing to target ForthActor
-                Sys.send(forward);
-                break;
+        case MSG_WEB_SUBMIT: {
+            // Ignite timeout clock ticking immediately upon forwarding down to pipeline
+            if (_timeout_timer != nullptr) {
+                xTimerStart(_timeout_timer, 0);
             }
-            case MSG_FORTH_FEEDBACK:
-                // Every time the engine yields text data back successfully, we refresh the window!
-                // (Optional: reset timeout counter if you want it to trigger only on total stagnation)
-                if (_timeout_timer != nullptr) {
-                    xTimerReset(_timeout_timer, 0);
-                }
-                send_chunk(msg.buf, strlen(msg.buf));
-                break;
 
-            case MSG_FORTH_DONE:
-                // Forth finished working within time allowances
-                terminate_session();
-                break;
+            ActorMsg forward = msg;
+            forward.type = MSG_FORTH_EXEC;
+            forward.target_id = 1; // Direct path routing to target ForthActor
+            Sys.send(forward);
+            break;
+        }
+        case MSG_FORTH_FEEDBACK:
+            // Every time the engine yields text data back successfully, we refresh the window!
+            // (Optional: reset timeout counter if you want it to trigger only on total stagnation)
+            if (_timeout_timer != nullptr) {
+                xTimerReset(_timeout_timer, 0);
+            }
+            send_chunk(msg.buf, strlen(msg.buf));
+            break;
 
-            case MSG_SESSION_TIMEOUT:
-                // Clock elapsed before Forth processing hung up or returned status markers
-                handle_timeout();
-                break;
+        case MSG_FORTH_DONE:
+            // Forth finished working within time allowances
+            terminate_session();
+            break;
 
-            default:
-                break;
+        case MSG_SESSION_TIMEOUT:
+            // Clock elapsed before Forth processing hung up or returned status markers
+            handle_timeout();
+            break;
+
+        default:
+            Serial.printf("unknown msg.type=%d\n", msg.type);
+            break;
         }
     }
 };
+
+#endif // _XSERVER_ACTOR_H
