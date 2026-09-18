@@ -165,11 +165,9 @@ esp_err_t XServer::handle_web_req(httpd_req_t *req) {
     /// can only ever cost this one fixed window, regardless of how many
     /// lines were submitted, rather than scaling with line count.
     LineSink sink(_web, tid, cls, SUBMIT_BUDGET_MS);
-    bool ok         = sink.run(raw_val, raw_len);
-    size_t lc       = sink.lc();
-    size_t lc_total = sink.lc_total();
-
-    if (!ok) _report_trunc(tid, lc, lc_total);
+    if (!sink.run(raw_val, raw_len)) {
+        _report_trunc(tid, sink.lc(), sink.lc_total());
+    }
 
     // Hand off only plain values. No buffer, no req pointer crosses the
     // task boundary — the worker only owns streaming the response back.
