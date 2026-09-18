@@ -15,51 +15,66 @@
 ///
 ///> ESP32 WiFi setup
 ///
+#include <Arduino.h>
 #include "src/esp32/mcu.h"                ///< MCU specific Forth words
 
 const char *WIFI_SSID = "Amitofo_4F";     ///< use your own SSID
 const char *WIFI_PASS = "25325754";       ///< and the password
 const int   WIFI_PORT = 80;               ///< and the password
 
-// Define structural payload contracts uniformly across your files
-// Instantiate Global Message-Routing Pipelines
-xQueWeb *web_bridge = NULL;
-xQueUI  *ui_bridge  = NULL;
+ActorSystem Sys; // Global instantiation assignment
+uint32_t ForthActor::_active_session_id = 0;
+std::atomic<bool> ForthActor::_abort_requested(false);
 
-// Instantiate the distinct, modular systems with custom parameters
-XServer myWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
-XGL     myUiRenderer(480, 480);
-XForth  myForthEngine(200, 10);
+XServer    myWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
+ForthActor *globalForthActor = nullptr;
+XGL        *myUiRenderer     = nullptr;
+TimerHandle_t telemetryTimer  = nullptr;
+
+void telemetry_timer_callback(TimerHandle_t xTimer) {
+    ActorMsg msg;
+    msg.type = MSG_SYS_TELEMETRY;
+    msg.target_id = GUI_ACTOR_GLOBAL_ID; 
+    msg.memory.free_heap_kb  = ESP.getFreeHeap() / 1024;
+    msg.memory.free_psram_kb = ESP.getFreePsram() / 1024;
+    Sys.send(msg);
+}
 
 void setup() {
     delay(200);
     Serial.begin(115200);
+    
+    mcu_init(); 
 
-    // 1. Build the non-fragmenting communications pipeline channels
-    web_bridge = new xQueWeb(5, 5);
-    ui_bridge  = new xQueUI(5, 5);
+    // 1. Boot up the central conveyor thread pool system on Core 0
+    Sys.begin(3, 5);
 
-    if (web_bridge == NULL || ui_bridge == NULL) {
-        Serial.println("Critical: Failed to generate system pipelines.");
-        while(1);
+    // 2. Register the Core 0 Brain Actor (Global ID = 1)
+    globalForthActor = new ForthActor(1);
+    Sys.register_actor(globalForthActor);
+
+    // 3. Register the Core 1 Graphics Engine Canvas Actor (Global ID = 2)
+    myUiRenderer = new XGL(2, 480, 480);
+    Sys.register_actor(myUiRenderer);
+    myUiRenderer->begin(10); 
+
+    // 4. Initialize Web Services Endpoint Gates on Core 0
+    myWebServer.begin(6);
+
+    // 5. Start the Telemetry Pump
+    telemetryTimer = xTimerCreate(
+        "sys_metric_pump",
+        pdMS_TO_TICKS(500),         
+        pdTRUE,                     
+        nullptr,
+        telemetry_timer_callback
+    );
+    
+    if (telemetryTimer != nullptr) {
+        xTimerStart(telemetryTimer, 0);
     }
-    // 2. Deploy Web Server Engine ──> Core 0 (Priority 6)
-    myWebServer.begin(web_bridge, 6);
 
-    // 3. Deploy High-Performance Graphic Canvas Engine ──> Core 1 (Priority 10)
-    // We give the UI the highest priority layer to guarantee responsive drawing updates
-    myUiRenderer.begin(ui_bridge, 10);
-
-    // 4. Deploy Forth VM Interpreter Engine ──> Core 0 (Priority 5)
-    mcu_init();                         ///> initialize Forth VM
-    mem_stat();
-
-    myForthEngine.begin(web_bridge, ui_bridge, 5);
-
-    // 5. Safely delete the empty Arduino loop task to reclaim internal SRAM boundaries
     vTaskDelete(NULL);
 }
 
-void loop() {
-    // Left empty and uncalled because loopTask is securely deleted
-}
+void loop() {}
