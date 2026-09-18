@@ -31,49 +31,6 @@ bool XForth::begin(xQueWeb *web, xQueUI *ui, int priority) {
     return (xReturned == pdPASS);
 }
 
-#if 0 // actor
-void XForth::handle_web_req(TickType_t wait_ticks) {
-    msg_web_t req;
-
-    // Block for the first request up to wait_ticks instead of a fixed
-    // vTaskDelay every cycle - a line landing in _web wakes this task
-    // immediately rather than waiting for the next heartbeat.
-    if (!_web->wait_for_req(req, wait_ticks)) return;  // nothing arrived this cycle
-
-    do {
-        _req_id = req.id;      // capture session id, CC:DEBUG static => dynamic
-        char *cmd = (char*)req.buf;
-        DEBUG("  xforth << req[%d]'%s'\n", req.id, cmd);
-
-        // Execute non-fragmenting multi-token text processing
-        forth_vm(cmd, feedback);
-
-        msg_web_t rsp;
-        rsp.id     = _req_id;
-        rsp.buf[0] = 0;
-        rsp.eos    = true;
-        if (!_web->put_rsp_wait(rsp, pdMS_TO_TICKS(RSP_WAIT_MS*4))) {
-            ERR("xforth#handle_web_req failed to hangup");
-        }
-    } while (_web->get_req(req));   // drain any backlog without blocking again
-}
-
-void XForth::handle_ui_rsp() {
-    msg_gui_t rsp;
-    while (_ui->get_rsp(rsp)) {
-        // do nothing for now
-    }
-}
-
-void XForth::run() {
-    LOG("xforth task=%d> Background thread online.\n", _core);
-
-    while (1) {
-        handle_web_req(_tick);   // blocks up to _tick if empty, wakes immediately if not
-        handle_ui_rsp();
-    }
-}
-#endif // actor
 void XForth::feedback(int len, const char *rst) {
     static msg_gui_t gui_req;
     static msg_web_t web_rsp;
