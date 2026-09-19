@@ -11,6 +11,11 @@
 #include "xbridge.h"
 #include "esp_http_server.h"
 
+#define ERR(msg)        Serial.println(msg)
+//#define DEBUG(fmt, ...)
+#define DEBUG(fmt, ...) Serial.printf(fmt, __VA_ARGS__)
+#define LOG(fmt, ...)   Serial.printf(fmt, __VA_ARGS__)
+
 enum ActorMsgType {
     MSG_WEB_SUBMIT,        // Incoming raw multi-line payload block
     MSG_FORTH_EXEC,        // Process a single newline-delimited command string
@@ -26,6 +31,7 @@ enum ActorMsgType {
 struct ActorMsg {
     ActorMsgType type;
     uint32_t     target_id;  // Unique ID of the destination Actor
+    uint32_t     sid;        // Session id (== SessionActor id). Distinct from fd on purpose.
     int          fd;         // Client socket handle or original source tracking reference
     httpd_handle_t hd;       // Web server handle context
     union {
@@ -117,8 +123,18 @@ public:
         xSemaphoreGive(_mutex);
     }
 
-    bool send(const ActorMsg &msg) {
-        return xQueueSend(_actor_queue, &msg, 0) == pdPASS;
+    /// Bounded-wait send. ONLY call from threads that are not this queue's
+    /// consumer (Forth task, httpd thread). Never from a dispatcher worker.
+    bool send(const ActorMsg &msg, TickType_t ticks=0) {
+        if (ticks != 0) ERR("send_wait: for FORTH to abort");
+        return xQueueSend(_actor_queue, &msg, ticks) == pdPASS;
+    }
+
+    bool has_actor(uint32_t id) {
+        xSemaphoreTake(_mutex, portMAX_DELAY);
+        bool found = _registry.find(id) != _registry.end();
+        xSemaphoreGive(_mutex);
+        return found;
     }
 
     bool send_priority(const ActorMsg &msg) {
