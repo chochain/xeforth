@@ -1,12 +1,13 @@
 /// -*- mode: c++ -*-
+///
+/// @file
+/// @brief Web Server class implementation (esp_http_server v2.0.16)
+///
 #include "xserver.h"
+#include "xlinesink.h"          /// include xactor.h, xforth_actor.h
 #include "xserver_actor.h"
-#include "xactor.h"
-#include "xlinesink.h"
 
-#define FORTH_ACTOR_GLOBAL_ID 1
-
-static const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
+static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 <html>
 <head>
   <meta charset='UTF-8'>
@@ -20,28 +21,33 @@ static const char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
     #tib { flex: 1; background:#000; color:#00ff00; border:1px solid #333; resize:none; padding:10px; font-family:inherit; font-size:inherit; }
     .cmd-entry { color: #00bcff; margin-top: 5px; }
     .rsp-entry { color: #00ff00; white-space: pre-wrap; }
-    .abort-btn { background:#ff0000; color:#fff; border:none; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:5px; }
+    .abort-btn { background:#880000; color:#fff; border:none; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:5px; }
   </style>
 </head>
 <body>
   <div id='container'>
-    <div id='log' hx-on::after-swap="if (this.scrollHeight - this.scrollTop - this.clientHeight < 300) this.scrollTop = this.scrollHeight">xeForth v1.0 Initialized...<br/></div>
-    <div id='tib-form'>
-      <button class="abort-btn" hx-post="/abort" hx-target="#log" hx-swap="beforeend">EMERGENCY BREAK (ABORT)</button>
-      <form hx-post='/execute' hx-target='#log' hx-swap='beforeend' hx-on::after-request="document.getElementById('tib').value=''"
-        onsubmit="const log=document.getElementById('log'); log.innerHTML += '<div class='cmd-entry'>&gt; ' + document.getElementById('tib').value.replace(/
-/g,'<br/>') + '</div>'; log.scrollTop = log.scrollHeight">
-      <textarea id='tib' name='forth_code' placeholder='Type Forth code here...'
-        onkeydown="if(event.keyCode===13 && !event.shiftKey) { event.preventDefault(); htmx.trigger(this.form, 'submit'); }"></textarea>
-      </form>
-    </div>
+    <div id='log'
+      hx-on::after-swap="if (this.scrollHeight - this.scrollTop - this.clientHeight < 300) this.scrollTop = this.scrollHeight">xeForth v1.0 Initialized...<br/></div>
+    <form id='tib-form'
+      hx-post='/execute'
+      hx-target='#log'
+      hx-swap='beforeend'
+      hx-on::after-request="this.reset()"
+      onsubmit="const log=document.getElementById('log'); log.innerHTML += '<div class=\'cmd-entry\'>&gt; ' + document.getElementById('tib').value.replace(/\n/g,'<br/>') + '</div>'; log.scrollTop = log.scrollHeight">
+    <textarea id='tib' name='forth_code'
+      placeholder='Type Forth code here...'
+      onkeydown="if(event.keyCode===13 && !event.shiftKey) {
+        event.preventDefault();
+        htmx.trigger('#tib-form', 'submit');
+      }"></textarea>
+    <div id="abort-control-slot">server will inject button here</div> 
+    </form>
   </div>
 </body>
 </html>
 )XX";
 
-static uint32_t last_active_session = 0;
-
+// Modify execute_handler inside xserver.cpp:
 esp_err_t execute_handler(httpd_req_t *req) {
     XServer *server = static_cast<XServer*>(req->user_ctx);
     int client_sockfd = httpd_req_to_sockfd(req);
@@ -53,30 +59,59 @@ esp_err_t execute_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    uint32_t session_id = Sys.alloc_id();
-    last_active_session = session_id;
+    // 1. Allocate a strictly localized session ID
+    uint32_t sid = Sys.alloc_id();         ///< session id
     
-    SessionActor *session = new SessionActor(session_id, client_sockfd, req->handle);
-    Sys.register_actor(session);
+    SessionActor *ses = new SessionActor(sid, client_sockfd, req->handle);
+    Sys.register_actor(ses);
 
-    LineSink sink(session_id, JOB_DEMAND);
-    sink.split_and_stream(raw_val, raw_len);
+    // 2. ⚡ THE TRICK: Instantly inject an abort button tied to this exact ID back to the caller's browser.
+    // HTMX hx-swap-oob (Out-Of-Bounds) will swap this directly into the target slot automatically.
+    char oob_buf[256];
+    snprintf(oob_buf, sizeof(oob_buf),
+        "<div id='abort-control-slot' hx-swap-oob='true'>"
+        "<button class='abort-btn' hx-post='/abort?id=%u' hx-target='#log' hx-swap='beforeend'>"
+        "STOP (session %u)</button></div>", sid, sid);
+             
+    // Force transmission down the raw client socket instantly
+    httpd_socket_send(req->handle, client_sockfd, oob_buf, strlen(oob_buf), 0);
 
+    // 3. Kick off execution
+    LineSink sink(sid, JOB_DEMAND);
+    sink_result_t rc = sink.split_and_stream(raw_val, raw_len);
+    if (rc != SINK_OK) {
+        LOG("execute: submission %u rejected (%d)\n", sid, (int)rc);
+    }
     return ESP_OK;
 }
 
 esp_err_t abort_handler(httpd_req_t *req) {
-    if (last_active_session != 0) {
-        ActorMsg abort_msg;
-        abort_msg.type = MSG_FORTH_ABORT;
-        abort_msg.target_id = FORTH_ACTOR_GLOBAL_ID;
-        abort_msg.fd = (int)last_active_session;
-        
-        // Priority Line-Cut: Insert directly to the front of the queue
-        Sys.send_priority(abort_msg);
+    // 1. Safe extraction of the target query parameters from the HTTP URI context
+    char     buf[32];
+    uint32_t sid = 0; ///< target session to kill
+    
+    if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
+        char val[16];
+        if (httpd_query_key_value(buf, "id", val, sizeof(val)) == ESP_OK) {
+            sid = strtoul(val, nullptr, 10);
+        }
     }
-    httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, "<div style='color:red;'>[System Interrupt Broadcasted]</div>", HTTPD_RESP_USE_STRLEN);
+
+    // 2. Only broadcast preemption if a valid extraction occurred
+    if (sid != 0) {
+        ActorMsg x { MSG_FORTH_ABORT, FORTH_ACTOR_GLOBAL_ID, sid, -1 };
+        Sys.send_priority(x);
+        
+        // 3. Clear out the abort button from the caller's interface since it was triggered
+        httpd_resp_set_type(req, "text/html");
+        return httpd_resp_send(req,
+            "<div id='abort-control-slot' hx-swap-oob='true'></div>"
+            "<div style='color:red;'>[Interrupt Broadcasted to Session]</div>",
+            HTTPD_RESP_USE_STRLEN);
+    }
+
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid Session ID");
+    return ESP_FAIL;
 }
 
 bool XServer::begin(int priority) {
@@ -86,15 +121,17 @@ bool XServer::begin(int priority) {
 
 void XServer::setup() {
     WiFi.mode(WIFI_STA);
+    WiFi.begin(_ssid, _password);
     while (WiFi.status() != WL_CONNECTED) {
+        LOG("%c", '.');
         vTaskDelay(pdMS_TO_TICKS(500));
     }
-    Serial.printf("\ncore0 xsvr> live at http://%s\n", WiFi.localIP().toString().c_str());
+    LOG("\ncore0 xsvr> live at http://%s\n", WiFi.localIP().toString().c_str());
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = _port;
     config.core_id     = 0;
-    config.stack_size  = 4096; // Lightweight routing thread stack footprint
+    config.stack_size  = 8192; // read_form() alone puts 2 KB on the stack; 4096 overflowed
 
     if (httpd_start(&_httpd, &config) != ESP_OK) return;
 
