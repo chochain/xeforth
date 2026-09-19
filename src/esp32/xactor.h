@@ -8,13 +8,19 @@
 #include <Arduino.h>
 #include <map>
 #include <algorithm>
-#include "xbridge.h"
 #include "esp_http_server.h"
 
+#define QUE_BUF_SZ      128
 #define ERR(msg)        Serial.println(msg)
 //#define DEBUG(fmt, ...)
 #define DEBUG(fmt, ...) Serial.printf(fmt, __VA_ARGS__)
 #define LOG(fmt, ...)   Serial.printf(fmt, __VA_ARGS__)
+
+typedef enum {
+    JOB_BATCH    = 0,  /// submit-and-collect: queued, no live interaction expected
+    JOB_DEMAND   = 1,  /// interactive/time-sharing: low-latency, session held open
+    JOB_REALTIME = 2   /// preemptive: serviced ahead of BATCH/DEMAND, not FIFO order
+} job_class_t;
 
 enum ActorMsgType {
     MSG_WEB_SUBMIT,        // Incoming raw multi-line payload block
