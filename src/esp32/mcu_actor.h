@@ -1,0 +1,110 @@
+#ifndef __EFORTH_PLATFORM_MCU_H
+#define __EFORTH_PLATFORM_MCU_H
+///
+/// @file
+/// @brief eForth implemented for ESP32
+/// @note
+///    benchmark: 1K*1K test case
+///    1440ms Dr. Ting's orig/esp32forth_82
+///    1240ms ~/Download/forth/esp32/esp32forth8_exp9
+///    1045ms orig/esp32forth8_1
+///     999ms orig/40x/ceforth subroutine-threaded, 16-bit xt offset
+///     940ms orig/40x/ceforth use cached xt offsets in nest()
+///     665ms src/ceforth vector-based, object-threaded
+///     534ms src/ceforth, multi-threading, vector-based, object-threaded (with gcc -O3)
+///
+const char *APP_VERSION = "xeForth v1.0";
+///
+///> interface to core module
+///
+#include "xactor.h"
+#include "xserver2.h"             ///< ESP32 Async Web Server (Gate)
+#include "xforth_actor.h"        ///< Forth VM Actor
+#include "xgl_actor.h"           ///< GUI Actor (LVGL+Touch)
+#include "../ceforth.h"          ///< Forth VM itself
+
+extern void forth_init();
+extern int  forth_vm(const char *cmd, void(*hook)(int, const char*));
+extern List<Code*, E4_DICT_SZ> dict;
+///====================================================================
+///
+///> Memory statistics - for heap, stack, external memory debugging
+///
+void mem_stat()  {
+    size_t  rf = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t  rt = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+    int64_t rp = 1000L * rf / rt;
+    size_t  sf = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t  st = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    int64_t sp = 1000L * sf / st;
+    
+    LOGS("\nSRAM ");  LOG(static_cast<float>(rp) * 0.1);
+    LOGS("% free ("); LOG(rf>>10);
+    LOGS(" / ");      LOG(rt>>10); LOGS(" KB)");
+    LOGS(", PSRAM "); LOG(static_cast<float>(sp) * 0.1);
+    LOGS("% free ("); LOG(sf>>10);
+    LOGS(" / ");      LOG(st>>10); LOGS(" KB)\n");
+}
+///====================================================================
+///
+///> Arduino/ESP32 SPIFFS interfaces
+///  @brief eForth external file loader from Flash memory
+///         can be called in setup() to become a turn-key system
+///
+#include <SPIFFS.h>
+void forth_include(const char *fname) {
+    auto dumb = [](int, const char *) { /* silent output */ };
+    if (!SPIFFS.begin()) {
+        LOGS("Error mounting SPIFFS"); return;
+    }
+    File file = SPIFFS.open(fname, "r");
+    if (!file) {
+        LOGS("Error opening file:"); LOG(fname); return;
+    }
+    LOGS("Loading file: "); LOG(fname); LOGS("...");
+    while (file.available()) {
+        char cmd[256], *p = cmd, c;
+        while ((c = file.read())!='\n') *p++ = c;   // one line a time
+        *p = '\0';
+        LOGS("\n<< "); LOG(cmd);                    // show bootstrap command
+        forth_vm(cmd, dumb);
+    }
+    LOGS("Done loading.\n");
+    file.close();
+    SPIFFS.end();
+}
+///
+///> add ESP32 specific opcodes
+///
+#define PEEK(a)      (U32)(*(U32*)((UFP)(a)))
+#define POKE(a, c)   (*(U32*)((UFP)(a))=(U32)(c))
+
+constexpr Code ops[] = {
+    CODE("mstat",  mem_stat()),
+    CODE("pinmode",IU p = POPI(); pinMode(p, POPI())),          // n p --
+    CODE("in",     IU p = POPI(); PUSH(digitalRead(p))),        // p -- n
+    CODE("out",    IU p = POPI(); digitalWrite(p, POPI())),     // n p --
+    CODE("ain",    IU p = POPI(); PUSH(analogRead(p))),         // p -- n
+    CODE("pwm",    IU p = POPI(); analogWrite(p, POPI())),      // n p --
+    CODE("peek",   IU a = POPI(); PUSH(PEEK(a))),               // a -- n
+    CODE("poke",   IU a = POPI(); POKE(a, POPI())),             // n a --
+};
+
+void mcu_init() {
+    LOGS("\n");                  LOGS(APP_VERSION);
+    LOGS(" on core[");           LOG(xPortGetCoreID());
+    LOGS("] at ");               LOG(getCpuFrequencyMhz());      
+    LOGS(" MHz\n");
+    LOG_KV("pinMode INPUT|OUTPUT|PULLUP|PULLDOWN=", INPUT);
+    LOG_KV("|", OUTPUT);         LOG_KV("|", INPUT_PULLUP);
+    LOG_KV("|", INPUT_PULLDOWN);
+    LOG_KV(", digitalWrite HIGH|LOW=", HIGH);
+    LOG_KV("|", LOW);            LOGS("\n");
+    
+    forth_init();
+    
+    const int sz = (int)(sizeof(ops))/(sizeof(Code));
+    for (const Code &c : ops) dict.push((Code*)&c);
+}
+#endif // __EFORTH_PLATFORM_MCU_H
+
