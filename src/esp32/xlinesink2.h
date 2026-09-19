@@ -1,6 +1,6 @@
 /// -*- mode: c++ -*-
-#ifndef _XLINESINK_H
-#define _XLINESINK_H
+#ifndef _XLINESINK2_H
+#define _XLINESINK2_H
 
 #include "xactor.h"
 #include "xforth_actor.h"
@@ -103,4 +103,4 @@ public:
     }
 };
 
-#endif // _XLINESINK_H
+#endif // _XLINESINK2_H

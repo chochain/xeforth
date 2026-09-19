@@ -2,9 +2,8 @@
 /// @file
 /// @brief ESP32-S3 4848S040 LVGL renderer interface
 ///
-#ifndef _XGL_H
-#define _XGL_H
-#include "xque.h"
+#ifndef _XGL_ACTOR_H
+#define _XGL_ACTOR_H
 
 #if (ARDUINO || ESP32)
 #include <Arduino.h>
@@ -121,5 +120,5 @@ public:
 };
 
 #endif // (ARDUINO || ESP32)
-#endif // _XGL_H
+#endif // _XGL_ACTOR_H
 

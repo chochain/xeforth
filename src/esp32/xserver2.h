@@ -1,6 +1,6 @@
 /// -*- mode: c++ -*-
-#ifndef _XSERVER_H
-#define _XSERVER_H
+#ifndef _XSERVER2_H
+#define _XSERVER2_H
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -25,4 +25,4 @@ public:
     bool read_form(httpd_req_t *req, char *out, size_t out_sz, size_t &out_len);
 };
 
-#endif
+#endif // _XSERVER2_H

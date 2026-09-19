@@ -1,5 +1,5 @@
-#ifndef __EFORTH_PLATFORM_MCU_H
-#define __EFORTH_PLATFORM_MCU_H
+#ifndef _MCU_ACTOR_H
+#define _MCU_ACTOR_H
 ///
 /// @file
 /// @brief eForth implemented for ESP32
@@ -106,5 +106,5 @@ void mcu_init() {
     const int sz = (int)(sizeof(ops))/(sizeof(Code));
     for (const Code &c : ops) dict.push((Code*)&c);
 }
-#endif // __EFORTH_PLATFORM_MCU_H
+#endif // _MCU_ACTOR_H
 
