@@ -98,7 +98,7 @@ bool XGL::begin(int priority) {
 
 // Thread-safe terminal stream printer
 void XGL::term_print(const char *txt, lv_color_t textColor) {
-    DEBUG("    xgl#term_log <<+ '%s'", txt);
+    DEBUG("    xgl#term_log <<+ '%s'\n", txt);
     
     // Append text to terminal object canvas
     lv_textarea_add_text(_term_log, txt);
@@ -111,7 +111,7 @@ void XGL::term_print(const char *txt, lv_color_t textColor) {
 void XGL::process_mailbox() {
     ActorMsg req;
     while (xQueueReceive(_mailbox, &req, 0) == pdTRUE) {
-        DEBUG("    xgl#handle_req << op=%d, '%s'", req.op_code, req.buf ? (char*)req.buf : (char*)"NA");
+        DEBUG("    xgl#handle_req << type=%d, '%s'\n", req.type, req.buf ? (char*)req.buf : (char*)"NA");
         switch (req.type) {
         case MSG_GUI_DRAW_CMD:
             term_print(req.buf, lv_color_make(0, 255, 255));
@@ -130,7 +130,7 @@ void XGL::process_mailbox() {
 #endif
         } break;
         default:
-            Serial.printf("unknown req.type=%d\n", req.type);
+            LOG("unknown req.type=%d\n", req.type);
             break;
         }
     }
