@@ -14,8 +14,8 @@ class SessionActor : public BaseActor {
 private:
     int            _fd;
     httpd_handle_t _hd;
-    bool           _headers_sent;
-    TimerHandle_t  _timeout_timer;
+    bool           _hdr_sent;
+    TimerHandle_t  _timer;
 
     // Runs on the FreeRTOS timer daemon: must not block, and must not touch `this`.
     // Only the actor id travels, so a late timeout for a finished session lands on
@@ -40,7 +40,7 @@ private:
     /// Sends the status line + headers + opening wrapper exactly once. Every path
     /// that writes to the socket goes through this, including terminate_session().
     void ensure_headers() {
-        if (_headers_sent) return;
+        if (_hdr_sent) return;
         const char *headers =
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: text/html\r\n"
@@ -48,7 +48,7 @@ private:
             "Connection: keep-alive\r\n\r\n";
         httpd_socket_send(_hd, _fd, headers, strlen(headers), 0);
         send_raw_chunk("<div class='rsp-entry'>", strlen("<div class='rsp-entry'>"));
-        _headers_sent = true;
+        _hdr_sent = true;
     }
 
     void send_chunk(const char *data, size_t len) {
@@ -57,11 +57,11 @@ private:
     }
 
     void stop_timer() {
-        if (_timeout_timer == nullptr) return;
+        if (_timer == nullptr) return;
         // Small bounded wait: a dropped stop/delete command would leave a live timer.
-        xTimerStop(_timeout_timer, pdMS_TO_TICKS(50));
-        xTimerDelete(_timeout_timer, pdMS_TO_TICKS(50));
-        _timeout_timer = nullptr;
+        xTimerStop(_timer, pdMS_TO_TICKS(50));
+        xTimerDelete(_timer, pdMS_TO_TICKS(50));
+        _timer = nullptr;
     }
 
     void handle_timeout() {
@@ -89,14 +89,15 @@ private:
 
 public:
     SessionActor(uint32_t actor_id, int client_fd, httpd_handle_t server_hd)
-        : BaseActor(actor_id), _fd(client_fd), _hd(server_hd),
-          _headers_sent(false), _timeout_timer(nullptr) {
+        : BaseActor(actor_id),
+          _fd(client_fd), _hd(server_hd), _hdr_sent(false), _timer(nullptr) {
 
+#if 0
         char name[16];
         snprintf(name, sizeof(name), "ses_%u", (unsigned)actor_id);
 
         // Auto-reload: if a timeout message is lost to a full queue, it fires again.
-        _timeout_timer = xTimerCreate(
+        _timer = xTimerCreate(
             name,
             pdMS_TO_TICKS(REQ_TIMEOUT_MS),
             pdTRUE,
@@ -106,10 +107,11 @@ public:
         // Start now, not on first feedback: a VM that hangs before printing must
         // still time out. (The old MSG_WEB_SUBMIT path that started it is gone,
         // since LineSink no longer routes through the session.)
-        if (_timeout_timer == nullptr ||
-            xTimerStart(_timeout_timer, pdMS_TO_TICKS(50)) != pdPASS) {
+        if (_timer == nullptr ||
+            xTimerStart(_timer, pdMS_TO_TICKS(50)) != pdPASS) {
             LOG("session %u: timeout timer unavailable\n", (unsigned)actor_id);
         }
+#endif        
     }
 
     ~SessionActor() override {
