@@ -122,7 +122,7 @@ public:
         switch (msg.type) {
         case MSG_FORTH_FEEDBACK:
             // Output is progress: restart the stagnation window.
-            if (_timeout_timer != nullptr) xTimerReset(_timeout_timer, 0);
+            if (_timer != nullptr) xTimerReset(_timer, 0);
             send_chunk(msg.buf, strlen(msg.buf));
             break;
 
