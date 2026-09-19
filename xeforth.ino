@@ -16,24 +16,25 @@
 ///> ESP32 WiFi setup
 ///
 #include <Arduino.h>
-#include "src/esp32/mcu.h"                ///< MCU specific Forth words
+#include "src/esp32/mcu_actor.h"          ///< MCU specific Forth words
 
 const char *WIFI_SSID = "Amitofo_4F";     ///< use your own SSID
 const char *WIFI_PASS = "25325754";       ///< and the password
 const int   WIFI_PORT = 80;               ///< and the password
 
 ActorSystem Sys; // Global instantiation assignment
-uint32_t ForthActor::_active_session_id = 0;
-std::atomic<bool> ForthActor::_abort_requested(false);
 
-XServer    myWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
-ForthActor *globalForthActor = nullptr;
-XGL        *myUiRenderer     = nullptr;
-TimerHandle_t telemetryTimer  = nullptr;
+uint32_t          ForthActor::_active_sid = 0;
+std::atomic<bool> ForthActor::_abort(false);
+
+XServer       myWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
+ForthActor    *globalForthActor = nullptr;
+XGL           *myUiRenderer     = nullptr;
+TimerHandle_t telemetryTimer    = nullptr;
 
 void telemetry_timer_callback(TimerHandle_t xTimer) {
     ActorMsg msg;
-    msg.type = MSG_SYS_TELEMETRY;
+    msg.type      = MSG_SYS_TELEMETRY;
     msg.target_id = GUI_ACTOR_GLOBAL_ID; 
     msg.memory.free_heap_kb  = ESP.getFreeHeap() / 1024;
     msg.memory.free_psram_kb = ESP.getFreePsram() / 1024;
@@ -60,11 +61,11 @@ void setup() {
 
     // 4. Initialize Web Services Endpoint Gates on Core 0
     myWebServer.begin(6);
-
+#if 0
     // 5. Start the Telemetry Pump
     telemetryTimer = xTimerCreate(
         "sys_metric_pump",
-        pdMS_TO_TICKS(500),         
+        pdMS_TO_TICKS(500),
         pdTRUE,                     
         nullptr,
         telemetry_timer_callback
@@ -73,7 +74,7 @@ void setup() {
     if (telemetryTimer != nullptr) {
         xTimerStart(telemetryTimer, 0);
     }
-
+#endif 
     vTaskDelete(NULL);
 }
 
