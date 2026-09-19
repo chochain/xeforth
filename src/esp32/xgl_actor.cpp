@@ -2,7 +2,7 @@
 /// @file
 /// @brief ESP32-S3 4848S040 (ST7701S) LVGL Renderer
 ///
-#include "xgl.h"
+#include "xgl_actor.h"
 #include <esp_heap_caps.h>
 
 // 1. Declare the compiled C-array font file asset
