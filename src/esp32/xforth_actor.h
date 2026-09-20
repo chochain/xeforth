@@ -10,9 +10,11 @@ extern int forth_vm(const char *cmd, void(*hook)(int, const char*));
 class ForthActor : public BaseActor {
 private:
     static uint32_t          _active_sid;           ///< active session
+    static uint32_t          _active_lines;
     static std::atomic<bool> _abort;                ///< abort flag
 
     static void feedback(int len, const char *rst) {
+        DEBUG("  xforth[%d] >> <%d>%s", _active_sid, len, rst);
         if (_abort.load()) return;
 
         // 1. Send feedback back over the web stream interface (Core 0 Session)
@@ -38,31 +40,37 @@ public:
 
     void receive(const ActorMsg &msg) override {
         switch (msg.type) {
-        case MSG_FORTH_EXEC:
+        case MSG_FORTH_EXEC: {
+            DEBUG("  xforth[%d] << '%s'\n", msg.sid, (char*)msg.buf);
             _active_sid = msg.sid;
             _abort.store(false);
-            forth_vm(msg.buf, feedback);
-            break;
 
+            forth_vm(msg.buf, feedback);
+
+            if (--_active_lines == 0) {
+                ActorMsg eos { MSG_FORTH_DONE, msg.sid, msg.sid };
+                Sys.send(eos);
+            }
+        } break;
+        case MSG_FORTH_DONE:
+            DEBUG("  xforth[%d] << DONE line_count=%d\n", msg.sid, msg.line_count);
+            _active_lines = msg.line_count;
+            break;
         case MSG_GUI_TOUCH_TRIGGER:
-            LOG("Brain Received Touch Event from Core 1! Position: (%d, %d)\n", 
+            DEBUG("Brain Received Touch Event from Core 1! Position: (%d, %d)\n", 
                 msg.touch.x, msg.touch.y);
             break;
-
         case MSG_FORTH_ABORT: if (msg.sid == _active_sid) {
+            DEBUG("  xforth[%d] << ABORT\n", msg.sid);
             _abort.store(true);
             
             ActorMsg fb { MSG_FORTH_FEEDBACK, msg.sid, msg.sid };
             snprintf(fb.buf, sizeof(fb.buf), "\r\n[SYSTEM] Broken via Display Interface.\r\n");
             Sys.send(fb);
-            }
-            // no break, continue to DONE
             
-        case MSG_FORTH_DONE: {
-            ActorMsg x { MSG_FORTH_DONE, msg.sid, msg.sid };
-            Sys.send(x);
+            ActorMsg eos { MSG_FORTH_DONE, msg.sid, msg.sid };
+            Sys.send(eos);
         } break;
-            
         default:
             LOG("msg.type=%d not supported\n", msg.type);
             break;
