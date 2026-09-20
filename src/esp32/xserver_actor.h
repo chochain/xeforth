@@ -119,16 +119,19 @@ public:
     void receive(const ActorMsg &msg) override {
         switch (msg.type) {
         case MSG_FORTH_FEEDBACK:
+            DEBUG("session[%d] << '%s'\n", msg.target_id, (char*)msg.buf);
             // Output is progress: restart the stagnation window.
             if (_timer) xTimerReset(_timer, 0);
             send_chunk(msg.buf, strlen(msg.buf));
             break;
 
         case MSG_FORTH_DONE:
+            DEBUG("session[%d] DONE\n", msg.target_id);
             terminate_session();
             break;
 
         case MSG_SESSION_TIMEOUT:
+            DEBUG("session[%d] TIMEOUT\n", msg.target_id);
             handle_timeout();
             break;
 
