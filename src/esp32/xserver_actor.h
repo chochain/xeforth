@@ -3,7 +3,6 @@
 #define _XSERVER_ACTOR_H
 
 #include "xactor.h"
-#include "xforth_actor.h"
 
 #define REQ_TIMEOUT_MS 5000   ///< max silence (no Forth output) before the session is aborted
 
@@ -107,8 +106,7 @@ public:
         // Start now, not on first feedback: a VM that hangs before printing must
         // still time out. (The old MSG_WEB_SUBMIT path that started it is gone,
         // since LineSink no longer routes through the session.)
-        if (_timer == nullptr ||
-            xTimerStart(_timer, pdMS_TO_TICKS(50)) != pdPASS) {
+        if (!_timer || xTimerStart(_timer, pdMS_TO_TICKS(50)) != pdPASS) {
             LOG("session %u: timeout timer unavailable\n", (unsigned)actor_id);
         }
 #endif        
@@ -122,7 +120,7 @@ public:
         switch (msg.type) {
         case MSG_FORTH_FEEDBACK:
             // Output is progress: restart the stagnation window.
-            if (_timer != nullptr) xTimerReset(_timer, 0);
+            if (_timer) xTimerReset(_timer, 0);
             send_chunk(msg.buf, strlen(msg.buf));
             break;
 
