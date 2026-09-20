@@ -22,20 +22,20 @@ const char *WIFI_SSID = "Amitofo_4F";     ///< use your own SSID
 const char *WIFI_PASS = "25325754";       ///< and the password
 const int   WIFI_PORT = 80;               ///< and the password
 
+#define WORKER_TASK_COUNT 3
+
 ActorSystem Sys; // Global instantiation assignment
 
 uint32_t          ForthActor::_active_sid = 0;
 std::atomic<bool> ForthActor::_abort(false);
 
-XServer       myWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
-ForthActor    *globalForthActor = nullptr;
-XGL           *myUiRenderer     = nullptr;
-TimerHandle_t telemetryTimer    = nullptr;
+XServer       gWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
+ForthActor    *gForthActor = nullptr;
+XGL           *gUiRenderer = nullptr;
+TimerHandle_t gTimer       = nullptr;
 
-void telemetry_timer_callback(TimerHandle_t xTimer) {
-    ActorMsg msg;
-    msg.type      = MSG_SYS_TELEMETRY;
-    msg.target_id = GUI_ACTOR_GLOBAL_ID; 
+void timer_callback(TimerHandle_t xTimer) {
+    ActorMsg msg { MSG_SYS_TELEMETRY, GUI_ACTOR_GLOBAL_ID, 0 };
     msg.memory.free_heap_kb  = ESP.getFreeHeap() / 1024;
     msg.memory.free_psram_kb = ESP.getFreePsram() / 1024;
     Sys.send(msg);
@@ -45,34 +45,33 @@ void setup() {
     delay(200);
     Serial.begin(115200);
     
-    mcu_init(); 
+    // 1. Boot up the central conveyor thread pool system on Core 0 at priority 5
+    Sys.begin(WORKER_TASK_COUNT, 5);
 
-    // 1. Boot up the central conveyor thread pool system on Core 0
-    Sys.begin(3, 5);
+    // 2. Register the Core 0 Brain Actor
+    gForthActor = new ForthActor(FORTH_ACTOR_GLOBAL_ID);
+    Sys.register_actor(gForthActor);
 
-    // 2. Register the Core 0 Brain Actor (Global ID = 1)
-    globalForthActor = new ForthActor(1);
-    Sys.register_actor(globalForthActor);
+    // 3. Register the Core 1 Graphics Engine Canvas Actor at priority 10
+    gUiRenderer = new XGL(GUI_ACTOR_GLOBAL_ID, 480, 480);
+    Sys.register_actor(gUiRenderer);
+    gUiRenderer->begin(10); 
 
-    // 3. Register the Core 1 Graphics Engine Canvas Actor (Global ID = 2)
-    myUiRenderer = new XGL(2, 480, 480);
-    Sys.register_actor(myUiRenderer);
-    myUiRenderer->begin(10); 
+    // 4. Initialize Web Services Endpoint Gates on Core 0 at priority 6
+    gWebServer.begin(6);
 
-    // 4. Initialize Web Services Endpoint Gates on Core 0
-    myWebServer.begin(6);
+    mcu_init();
 #if 0
     // 5. Start the Telemetry Pump
-    telemetryTimer = xTimerCreate(
+    gTimer = xTimerCreate(
         "sys_metric_pump",
         pdMS_TO_TICKS(500),
         pdTRUE,                     
         nullptr,
-        telemetry_timer_callback
+        timer_callback
     );
-    
-    if (telemetryTimer != nullptr) {
-        xTimerStart(telemetryTimer, 0);
+    if (!gTimer || xTimerStart(gTimer, pdMS_TO_TICKS(50)) != pdPASS) {
+        ERR("sys_metric_timer not available");
     }
 #endif 
     vTaskDelete(NULL);
