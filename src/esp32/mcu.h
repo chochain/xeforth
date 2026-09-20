@@ -32,10 +32,10 @@ extern List<Code*, E4_DICT_SZ> dict;
 void mem_stat()  {
     size_t  rf = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     size_t  rt = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
-    int64_t rp = 1000L * rf / rt;
+    int64_t rp = (int64_t)(1000.0f * rf / rt);
     size_t  sf = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     size_t  st = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
-    int64_t sp = 1000L * sf / st;
+    int64_t sp = (int64_t)(1000.0f * sf / st);
     
     LOGS("\nSRAM ");  LOG(static_cast<float>(rp) * 0.1);
     LOGS("% free ("); LOG(rf>>10);
@@ -104,6 +104,8 @@ void mcu_init() {
     
     const int sz = (int)(sizeof(ops))/(sizeof(Code));
     for (const Code &c : ops) dict.push((Code*)&c);
+
+    mem_stat();
 }
 #endif // __EFORTH_PLATFORM_MCU_H
 
