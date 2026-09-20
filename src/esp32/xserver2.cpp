@@ -47,6 +47,28 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 </html>
 )XX";
 
+
+// 🚀 Local structural payload context to keep layers completely decoupled
+struct HttpContext {
+    httpd_handle_t hd;
+    int            fd;
+};
+
+// Static bridging translator function inside xserver.cpp
+static void handle_overflow(void* arg, const char* failed_line) {
+    auto* ctx = static_cast<HttpContext*>(arg);
+    if (!ctx) return;
+
+    const char* err = "<div style='color:#ffaa00;'>\r\n[SYSTEM ERROR] Pipeline Saturated: Script truncated, engine busy.</div>";
+    char hdr[16];
+    snprintf(hdr, sizeof(hdr), "%X\r\n", strlen(err));
+    
+    // Direct socket flush handles the immediate bypass beautifully
+    httpd_socket_send(ctx->hd, ctx->fd, hdr, strlen(hdr), 0);
+    httpd_socket_send(ctx->hd, ctx->fd, err, strlen(err), 0);
+    httpd_socket_send(ctx->hd, ctx->fd, "\r\n", 2, 0);
+}
+
 // Modify execute_handler inside xserver.cpp:
 esp_err_t execute_handler(httpd_req_t *req) {
     XServer *server = static_cast<XServer*>(req->user_ctx);
@@ -61,10 +83,13 @@ esp_err_t execute_handler(httpd_req_t *req) {
 
     // 1. Allocate a strictly localized session ID
     uint32_t sid = Sys.alloc_id();         ///< session id
+
+    DEBUG("session[%d] created\n", sid);
     
     SessionActor *ses = new SessionActor(sid, client_sockfd, req->handle);
     Sys.register_actor(ses);
 
+#if 0    
     // 2. ⚡ THE TRICK: Instantly inject an abort button tied to this exact ID back to the caller's browser.
     // HTMX hx-swap-oob (Out-Of-Bounds) will swap this directly into the target slot automatically.
     char oob_buf[256];
@@ -75,12 +100,13 @@ esp_err_t execute_handler(httpd_req_t *req) {
              
     // Force transmission down the raw client socket instantly
     httpd_socket_send(req->handle, client_sockfd, oob_buf, strlen(oob_buf), 0);
-
+#endif 
     // 3. Kick off execution
-    LineSink sink(sid, JOB_DEMAND);
+    HttpContext ctx { req->handle, client_sockfd };
+    LineSink sink(sid, handle_overflow, &ctx);
     sink_result_t rc = sink.split_and_stream(raw_val, raw_len);
     if (rc != SINK_OK) {
-        LOG("execute: submission %u rejected (%d)\n", sid, (int)rc);
+        LOG("execute: req[%u] rejected (%d)\n", sid, (int)rc);
     }
     return ESP_OK;
 }
@@ -100,7 +126,7 @@ esp_err_t abort_handler(httpd_req_t *req) {
     // 2. Only broadcast preemption if a valid extraction occurred
     if (sid != 0) {
         ActorMsg x { MSG_FORTH_ABORT, FORTH_ACTOR_GLOBAL_ID, sid, -1 };
-        Sys.send_priority(x);
+        Sys.send(x, 0, true);          /// priority message to front of queue
         
         // 3. Clear out the abort button from the caller's interface since it was triggered
         httpd_resp_set_type(req, "text/html");
