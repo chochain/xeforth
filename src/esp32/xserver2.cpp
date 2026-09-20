@@ -47,30 +47,55 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 </html>
 )XX";
 
-
-// 🚀 Local structural payload context to keep layers completely decoupled
-struct HttpContext {
-    httpd_handle_t hd;
-    int            fd;
-};
-
 // Static bridging translator function inside xserver.cpp
 static void handle_overflow(void* arg, const char* failed_line) {
-    auto* ctx = static_cast<HttpContext*>(arg);
-    if (!ctx) return;
+    auto* req = static_cast<httpd_req_t *>(arg);
+    if (!req) return;
+    
+    int client_sockfd = httpd_req_to_sockfd(req);
+    if (client_sockfd < 0) return;
 
     const char* err = "<div style='color:#ffaa00;'>\r\n[SYSTEM ERROR] Pipeline Saturated: Script truncated, engine busy.</div>";
     char hdr[16];
     snprintf(hdr, sizeof(hdr), "%X\r\n", strlen(err));
     
     // Direct socket flush handles the immediate bypass beautifully
-    httpd_socket_send(ctx->hd, ctx->fd, hdr, strlen(hdr), 0);
-    httpd_socket_send(ctx->hd, ctx->fd, err, strlen(err), 0);
-    httpd_socket_send(ctx->hd, ctx->fd, "\r\n", 2, 0);
+    httpd_socket_send(req, client_sockfd, hdr, strlen(hdr), 0);
+    httpd_socket_send(req, client_sockfd, err, strlen(err), 0);
+    httpd_socket_send(req, client_sockfd, "\r\n", 2, 0);
+}
+
+static esp_err_t handle_abort(httpd_req_t *req) {
+    // 1. Safe extraction of the target query parameters from the HTTP URI context
+    char     buf[32];
+    uint32_t sid = 0; ///< target session to kill
+    
+    if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
+        char val[16];
+        if (httpd_query_key_value(buf, "id", val, sizeof(val)) == ESP_OK) {
+            sid = strtoul(val, nullptr, 10);
+        }
+    }
+
+    // 2. Only broadcast preemption if a valid extraction occurred
+    if (sid != 0) {
+        ActorMsg x { MSG_FORTH_ABORT, FORTH_ACTOR_GLOBAL_ID, sid, -1 };
+        Sys.send(x, 0, true);          /// priority message to front of queue
+        
+        // 3. Clear out the abort button from the caller's interface since it was triggered
+        httpd_resp_set_type(req, "text/html");
+        return httpd_resp_send(req,
+            "<div id='abort-control-slot' hx-swap-oob='true'></div>"
+            "<div style='color:red;'>[Interrupt Broadcasted to Session]</div>",
+            HTTPD_RESP_USE_STRLEN);
+    }
+
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid Session ID");
+    return ESP_FAIL;
 }
 
 // Modify execute_handler inside xserver.cpp:
-esp_err_t execute_handler(httpd_req_t *req) {
+static esp_err_t handle_execute(httpd_req_t *req) {
     XServer *server = static_cast<XServer*>(req->user_ctx);
     int client_sockfd = httpd_req_to_sockfd(req);
     if (client_sockfd < 0) return ESP_FAIL;
@@ -102,42 +127,11 @@ esp_err_t execute_handler(httpd_req_t *req) {
     httpd_socket_send(req->handle, client_sockfd, oob_buf, strlen(oob_buf), 0);
 #endif 
     // 3. Kick off execution
-    HttpContext ctx { req->handle, client_sockfd };
-    LineSink sink(sid, handle_overflow, &ctx);
+    LineSink    sink(sid, handle_overflow, (void*)req);
     sink_result_t rc = sink.split_and_stream(raw_val, raw_len);
-    if (rc != SINK_OK) {
-        LOG("execute: req[%u] rejected (%d)\n", sid, (int)rc);
-    }
+    if (rc != SINK_OK) LOG("execute: req[%u] rejected (%d)\n", sid, (int)rc);
+
     return ESP_OK;
-}
-
-esp_err_t abort_handler(httpd_req_t *req) {
-    // 1. Safe extraction of the target query parameters from the HTTP URI context
-    char     buf[32];
-    uint32_t sid = 0; ///< target session to kill
-    
-    if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
-        char val[16];
-        if (httpd_query_key_value(buf, "id", val, sizeof(val)) == ESP_OK) {
-            sid = strtoul(val, nullptr, 10);
-        }
-    }
-
-    // 2. Only broadcast preemption if a valid extraction occurred
-    if (sid != 0) {
-        ActorMsg x { MSG_FORTH_ABORT, FORTH_ACTOR_GLOBAL_ID, sid, -1 };
-        Sys.send(x, 0, true);          /// priority message to front of queue
-        
-        // 3. Clear out the abort button from the caller's interface since it was triggered
-        httpd_resp_set_type(req, "text/html");
-        return httpd_resp_send(req,
-            "<div id='abort-control-slot' hx-swap-oob='true'></div>"
-            "<div style='color:red;'>[Interrupt Broadcasted to Session]</div>",
-            HTTPD_RESP_USE_STRLEN);
-    }
-
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid Session ID");
-    return ESP_FAIL;
 }
 
 bool XServer::begin(int priority) {
@@ -152,7 +146,6 @@ void XServer::setup() {
         LOG("%c", '.');
         vTaskDelay(pdMS_TO_TICKS(500));
     }
-    LOG("\ncore0 xsvr> live at http://%s\n", WiFi.localIP().toString().c_str());
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = _port;
@@ -175,7 +168,7 @@ void XServer::setup() {
     httpd_uri_t exec_uri = {
         .uri = "/execute",
         .method = HTTP_POST,
-        .handler = execute_handler,
+        .handler = handle_execute,
         .user_ctx = this
     };
     httpd_register_uri_handler(_httpd, &exec_uri);
@@ -183,10 +176,12 @@ void XServer::setup() {
     httpd_uri_t abort_uri = {
         .uri = "/abort",
         .method = HTTP_POST,
-        .handler = abort_handler,
+        .handler = handle_abort,
         .user_ctx = this
     };
     httpd_register_uri_handler(_httpd, &abort_uri);
+    
+    LOG("\ncore0 xsvr> live at http://%s\n", WiFi.localIP().toString().c_str());
 }
 
 bool XServer::read_form(httpd_req_t *req, char *out, size_t out_sz, size_t &out_len) {
