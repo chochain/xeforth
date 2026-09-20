@@ -5,9 +5,6 @@
 #include "xactor.h"
 #include <atomic>  // Fix: Includes missing atomic utilities explicitly
 
-#define FORTH_ACTOR_GLOBAL_ID 1
-#define GUI_ACTOR_GLOBAL_ID   2
-
 extern int forth_vm(const char *cmd, void(*hook)(int, const char*));
 
 class ForthActor : public BaseActor {
@@ -15,7 +12,7 @@ private:
     static uint32_t          _active_sid;           ///< active session
     static std::atomic<bool> _abort;                ///< abort flag
 
-    static void vm_feedback_bridge(int len, const char *rst) {
+    static void feedback(int len, const char *rst) {
         if (_abort.load()) return;
 
         // 1. Send feedback back over the web stream interface (Core 0 Session)
@@ -44,7 +41,7 @@ public:
         case MSG_FORTH_EXEC:
             _active_sid = msg.sid;
             _abort.store(false);
-            forth_vm(msg.buf, vm_feedback_bridge);
+            forth_vm(msg.buf, feedback);
             break;
 
         case MSG_GUI_TOUCH_TRIGGER:
