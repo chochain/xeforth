@@ -52,7 +52,6 @@ void setup() {
 
     // 4. Deploy Forth VM Interpreter Engine ──> Core 0 (Priority 5)
     mcu_init();                         ///> initialize Forth VM
-    mem_stat();
 
     myForthEngine.begin(web_bridge, ui_bridge, 5);
 
