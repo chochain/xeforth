@@ -3,9 +3,9 @@
 #define _XLINESINK2_H
 
 #include "xactor.h"
-#include "xforth_actor.h"
 
-#define FORTH_POST_WAIT_MS 2000
+#define FORTH_POST_SLOW 20
+#define FORTH_POST_WAIT 200
 
 typedef enum {
     SINK_OK = 0,
@@ -18,12 +18,14 @@ typedef enum {
 ///
 /// Order guarantee: lines are posted FIFO, and the default httpd config runs one
 /// server task, so two submissions never interleave in the mailbox.
+typedef void (*EventCallback)(void* ctx, const char* line);
+
 class LineSink {
 private:
-    uint32_t    _sid;
-    job_class_t _cls;   // NOT honoured yet: see note in the reply (front-posting line by
-                        // line would reverse a multi-line submission)
-
+    uint32_t      _sid;
+    void*         _ctx;
+    EventCallback _on_overflow;
+    
     static int hex(char c) {
         if (c >= '0' && c <= '9') return c - '0';
         if (c >= 'A' && c <= 'F') return c - 'A' + 10;
@@ -32,9 +34,13 @@ private:
     }
 
     bool post(ActorMsgType type, const char *line = "", size_t n = 0) {
-        ActorMsg m { type, FORTH_ACTOR_GLOBAL_ID, _sid };  // zeroed: buf is NUL-terminated for any n < QUE_BUF_SZ
+        ActorMsg m { type, FORTH_ACTOR_GLOBAL_ID, _sid };    ///< zeroed: buf is NUL-terminated for any n < QUE_BUF_SZ
         if (n > 0) memcpy(m.buf, line, n);
-        Sys.send(m);
+        if (!Sys.send(m, FORTH_POST_SLOW)) {                 /// * slow feed to Forth VM
+            if (_on_overflow) _on_overflow(_ctx, line);
+            return false;
+        }
+        return true;
     }
 
     /// Whole submission is rejected, atomically from the user's point of view:
@@ -42,30 +48,28 @@ private:
     /// session is told why and closed.
     sink_result_t reject(sink_result_t why, const char *text) {
         ActorMsg x { MSG_FORTH_ABORT, FORTH_ACTOR_GLOBAL_ID, _sid };
-        Sys.send_priority(x);
+        Sys.send(x, 0, true);
 
         ActorMsg fb { MSG_FORTH_FEEDBACK, _sid, _sid };
         snprintf(fb.buf, sizeof(fb.buf), "\r\n[submission rejected: %s]\r\n", text);
-        Sys.send(fb, FORTH_POST_WAIT_MS);
+        Sys.send(fb, FORTH_POST_WAIT);
 
         // Preferred: DONE through the Forth mailbox, so Forth also clears its skip
         // entry and emits "[aborted]". If that is full too, close the session
         // directly; its timeout timer is the last line of defence.
-        if (!post(MSG_FORTH_DONE)) {
-            x.type = MSG_FORTH_DONE;
-            x.buf[0] = '\0';
-            Sys.send(x, FORTH_POST_WAIT_MS);
-        }
+        post(MSG_FORTH_DONE);
         return why;
-    }
+     }
 
 public:
-    LineSink(uint32_t session_id, job_class_t cls) : _sid(session_id), _cls(cls) {}
+    LineSink(uint32_t sid, EventCallback cb = NULL, void *ctx =NULL)
+        : _sid(sid), _on_overflow(cb), _ctx(ctx) {}
 
     sink_result_t split_and_stream(const char *raw, size_t len) {
         char   line[QUE_BUF_SZ];
-        size_t w = 0;
-        size_t r = 0;
+        size_t w    = 0;
+        size_t r    = 0;
+        bool   full = false;
 
         while (r < len) {
             char c = raw[r++];
@@ -79,26 +83,27 @@ public:
                         r += 2;
                     }
                 }
-            } else if (c == '+') {
-                c = ' ';
             }
+            else if (c == '+') c = ' ';
 
             if (c == '\r' || c == '\0') continue;   // NUL would truncate the line in the VM
-
             if (c == '\n') {
                 if (w > 0) {
-                    if (!post(MSG_FORTH_EXEC, line, w)) return reject(SINK_MBOX_FULL, "Forth busy");
+                    if (!post(MSG_FORTH_EXEC, line, w)) { full = true; break; }
                     w = 0;
                 }
                 continue;
             }
-
             if (w >= QUE_BUF_SZ - 1) return reject(SINK_LINE_TOO_LONG, "line too long");
+            
             line[w++] = c;
         }
+        if (!full && w > 0) line[w] = '\0';
 
-        if (w > 0 && !post(MSG_FORTH_EXEC, line, w)) return reject(SINK_MBOX_FULL, "Forth busy");
-        if (!post(MSG_FORTH_DONE))                   return reject(SINK_MBOX_FULL, "Forth busy");
+        // Always notify the framework to release the SessionActor context
+        if (w > 0 && !post(MSG_FORTH_EXEC, line, w)) return SINK_MBOX_FULL;
+        if (!post(MSG_FORTH_DONE))                   return SINK_MBOX_FULL;
+        
         return SINK_OK;
     }
 };
