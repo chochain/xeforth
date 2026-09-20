@@ -31,7 +31,7 @@ void my_lv_ui_updater_cb(void * user_data) {
     // 1. Cast the raw pointer back to our fixed structure
     auto* payload = static_cast<lv_ui_update_t*>(user_data);
     
-    if (payload != nullptr && my_lvgl_console_label != nullptr) {
+    if (payload && my_lvgl_console_label) {
         // 2. Perform the UI update safely on the main thread
         // For example, appending the Forth output text straight to an LVGL text area or label
         lv_label_ins_text(my_lvgl_console_label, LV_LABEL_POS_LAST, payload->message);
@@ -48,7 +48,6 @@ void my_lv_ui_updater_cb(void * user_data) {
 void my_touchpad_read(lv_indev_drv_t *touch_drv, lv_indev_data_t *data) {
     static int last_x = 0;
     static int last_y = 0;
-    static uint32_t last_touch_time = 0;
     TAMC_GT911 *ts = (TAMC_GT911*)touch_drv->user_data;
     
     ts->read();
@@ -61,16 +60,14 @@ void my_touchpad_read(lv_indev_drv_t *touch_drv, lv_indev_data_t *data) {
             data->point.x = touchX;
             data->point.y = touchY;
 
-            static uint32_t last_broadcast = 0;
-            if (millis() - last_broadcast > 100) { 
-                ActorMsg touch_msg;
-                touch_msg.type = MSG_GUI_TOUCH_TRIGGER;
-                touch_msg.target_id = 1; 
+            static uint32_t timer = millis() + 100;
+            if (millis() > timer) { 
+                ActorMsg touch_msg { MSG_GUI_TOUCH_TRIGGER, FORTH_ACTOR_GLOBAL_ID };
                 touch_msg.touch.x = touchX;
                 touch_msg.touch.y = touchY;
                 touch_msg.touch.state = 1;
                 Sys.send(touch_msg);
-                last_broadcast = millis();
+                timer += 100;
             }
         }
     }
@@ -80,7 +77,10 @@ void my_touchpad_read(lv_indev_drv_t *touch_drv, lv_indev_data_t *data) {
 }
 
 void XGL::receive(const ActorMsg &msg) {
-    xQueueSend(_mailbox, &msg, 0);
+    // ️Apply Backpressure: Block the calling Core 0 worker task if Core 1 is saturated
+    if (xQueueSend(_mailbox, &msg, 0) != pdTRUE) {
+        ERR("[SYSTEM WARNING] XGL Mailbox full, msg dropped.");
+    }
 }
 
 bool XGL::begin(int priority) {
@@ -119,11 +119,11 @@ void XGL::process_mailbox() {
         case MSG_SYS_TELEMETRY: {
 #if 0            
             char fmt_buf[32];
-            if (_sram_label != nullptr) {
+            if (_sram_label) {
                 snprintf(fmt_buf, sizeof(fmt_buf), "SRAM: %d KB", req.memory.free_heap_kb);
                 lv_label_set_text(_sram_label, fmt_buf);
             }
-            if (_psram_label != nullptr) {
+            if (_psram_label) {
                 snprintf(fmt_buf, sizeof(fmt_buf), "PSRAM: %d KB", req.memory.free_psram_kb);
                 lv_label_set_text(_psram_label, fmt_buf);
             }
