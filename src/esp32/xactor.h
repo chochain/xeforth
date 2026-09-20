@@ -48,6 +48,7 @@ struct ActorMsg {
     
     union {
         char buf[QUE_BUF_SZ]; /// Standard 128 bytes text string space
+        uint32_t line_count;
         struct {
             int16_t x;
             int16_t y;
@@ -131,6 +132,9 @@ public:
     /// Bounded-wait send. ONLY call from threads that are not this queue's
     /// consumer (Forth task, httpd thread). Never from a dispatcher worker.
     bool send(const ActorMsg &msg, TickType_t ticks=0, bool priority=false) {
+        DEBUG("actor[%d] << '%s'\n",
+              msg.target_id,
+              msg.type==MSG_FORTH_DONE ? "DONE" : (char*)msg.buf);
         if (!_queue) return false;
         return priority
             ? xQueueSendToFront(_queue, &msg, ticks) == pdPASS
