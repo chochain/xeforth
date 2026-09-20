@@ -35,7 +35,8 @@ private:
 
     bool post(ActorMsgType type, const char *line = "", size_t n = 0) {
         ActorMsg m { type, FORTH_ACTOR_GLOBAL_ID, _sid };    ///< zeroed: buf is NUL-terminated for any n < QUE_BUF_SZ
-        if (n > 0) memcpy(m.buf, line, n);
+        if (type == MSG_FORTH_DONE) m.line_count = n;
+        else if (n > 0) memcpy(m.buf, line, n);
         if (!Sys.send(m, FORTH_POST_SLOW)) {                 /// * slow feed to Forth VM
             if (_on_overflow) _on_overflow(_ctx, line);
             return false;
@@ -47,6 +48,8 @@ private:
     /// lines that already got queued are dropped, running one is aborted, and the
     /// session is told why and closed.
     sink_result_t reject(sink_result_t why, const char *text) {
+        DEBUG("linesink::reject[%d] '%s'", _sid, text);
+        
         ActorMsg x { MSG_FORTH_ABORT, FORTH_ACTOR_GLOBAL_ID, _sid };
         Sys.send(x, 0, true);
 
@@ -67,9 +70,10 @@ public:
 
     sink_result_t split_and_stream(const char *raw, size_t len) {
         char   line[QUE_BUF_SZ];
-        size_t w    = 0;
-        size_t r    = 0;
+        size_t w    = 0;           ///< buffer index
+        size_t r    = 0;           ///< raw index
         bool   full = false;
+        int    lc   = 0;           ///< line count
 
         while (r < len) {
             char c = raw[r++];
@@ -90,6 +94,7 @@ public:
             if (c == '\n') {
                 if (w > 0) {
                     if (!post(MSG_FORTH_EXEC, line, w)) { full = true; break; }
+                    lc++;
                     w = 0;
                 }
                 continue;
@@ -98,12 +103,12 @@ public:
             
             line[w++] = c;
         }
-        if (!full && w > 0) line[w] = '\0';
+        if (!full && w > 0) { line[w] = '\0'; lc++; }
 
         // Always notify the framework to release the SessionActor context
         if (w > 0 && !post(MSG_FORTH_EXEC, line, w)) return SINK_MBOX_FULL;
-        if (!post(MSG_FORTH_DONE))                   return SINK_MBOX_FULL;
-        
+        if (!post(MSG_FORTH_DONE, "", lc))           return SINK_MBOX_FULL;
+
         return SINK_OK;
     }
 };
