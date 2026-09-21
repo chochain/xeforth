@@ -47,22 +47,27 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
 </html>
 )XX";
 
+struct HttpContext {
+    httpd_handle_t hd;
+    int            fd;
+};
+
 // Static bridging translator function inside xserver.cpp
 static void handle_overflow(void* arg, const char* failed_line) {
-    auto* req = static_cast<httpd_req_t *>(arg);
-    if (!req) return;
-    
-    int client_sockfd = httpd_req_to_sockfd(req);
-    if (client_sockfd < 0) return;
+    auto* ctx = static_cast<HttpContext*>(arg);
+    if (!ctx) return;
 
     const char* err = "<div style='color:#ffaa00;'>\r\n[SYSTEM ERROR] Pipeline Saturated: Script truncated, engine busy.</div>";
     char hdr[16];
     snprintf(hdr, sizeof(hdr), "%X\r\n", strlen(err));
     
+    httpd_handle_t hd = ctx->hd;
+    int            fd = ctx->fd;
+    
     // Direct socket flush handles the immediate bypass beautifully
-    httpd_socket_send(req, client_sockfd, hdr, strlen(hdr), 0);
-    httpd_socket_send(req, client_sockfd, err, strlen(err), 0);
-    httpd_socket_send(req, client_sockfd, "\r\n", 2, 0);
+    httpd_socket_send(hd, fd, hdr, strlen(hdr), 0);
+    httpd_socket_send(hd, fd, err, strlen(err), 0);
+    httpd_socket_send(hd, fd, "\r\n", 2, 0);
 }
 
 static esp_err_t handle_abort(httpd_req_t *req) {
@@ -106,28 +111,17 @@ static esp_err_t handle_execute(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    // 1. Allocate a strictly localized session ID
+    // Allocate a strictly localized session ID
     uint32_t sid = Sys.alloc_id();         ///< session id
 
     DEBUG("session[%d] created\n", sid);
-    
+
     SessionActor *ses = new SessionActor(sid, client_sockfd, req->handle);
     Sys.register_actor(ses);
 
-#if 0    
-    // 2. ⚡ THE TRICK: Instantly inject an abort button tied to this exact ID back to the caller's browser.
-    // HTMX hx-swap-oob (Out-Of-Bounds) will swap this directly into the target slot automatically.
-    char oob_buf[256];
-    snprintf(oob_buf, sizeof(oob_buf),
-        "<div id='abort-control-slot' hx-swap-oob='true'>"
-        "<button class='abort-btn' hx-post='/abort?id=%u' hx-target='#log' hx-swap='beforeend'>"
-        "STOP (session %u)</button></div>", sid, sid);
-             
-    // Force transmission down the raw client socket instantly
-    httpd_socket_send(req->handle, client_sockfd, oob_buf, strlen(oob_buf), 0);
-#endif 
-    // 3. Kick off execution
-    LineSink    sink(sid, handle_overflow, (void*)req);
+    // Kick off execution
+    HttpContext ctx { req->handle, client_sockfd };
+    LineSink    sink(sid, handle_overflow, &ctx);
     sink_result_t rc = sink.split_and_stream(raw_val, raw_len);
     if (rc != SINK_OK) LOG("execute: req[%u] rejected (%d)\n", sid, (int)rc);
 
