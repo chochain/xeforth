@@ -43,7 +43,8 @@ private:
             "<div id='abort-control-slot' hx-swap-oob='true'>"
             "<button class='%s-btn'"
             "hx-post='/abort?id=%u' hx-target='#log' hx-swap='beforeend'>"
-            "%s (SESSION %u)</button></div>", on ? "abort" : "done", this->id, on ? "STOP" : "DONE", this->id);
+            "%s (session %u)</button></div>",
+                 on ? "abort" : "done", this->id, on ? "STOP" : "DONE", this->id);
         
         // Send the button component instantly down the raw client pipe socket wire
         send_chunk(oob, strlen(oob));
