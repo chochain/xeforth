@@ -21,8 +21,8 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
     #tib { flex: 1; background:#000; color:#00ff00; border:1px solid #333; resize:none; padding:10px; font-family:inherit; font-size:inherit; }
     .cmd-entry { color: #00bcff; margin-top: 5px; }
     .rsp-entry { color: #00ff00; white-space: pre-wrap; }
-    .abort-btn { background:#800000; color:#fff; border:1px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:5px; }
-    .done-btn  { background:#008000; color:#fff; border:1px; padding:10px; font-weight:bold; cursor:pointer; margin-bottom:5px; }
+    .abort-btn { background:#800000; color:#fff; border:1px; padding:10px; font-weight:bold; cursor:pointer; margin-top:5px; }
+    .done-btn  { background:#008000; color:#fff; border:1px; padding:10px; font-weight:bold; cursor:pointer; margin-top:5px; }
   </style>
 </head>
 <body>
