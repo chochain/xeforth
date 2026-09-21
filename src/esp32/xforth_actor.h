@@ -10,7 +10,6 @@ extern int forth_vm(const char *cmd, void(*hook)(int, const char*));
 class ForthActor : public BaseActor {
 private:
     static uint32_t          _active_sid;           ///< active session
-    static uint32_t          _active_lines;
     static std::atomic<bool> _abort;                ///< abort flag
 
     static void feedback(int len, const char *rst) {
@@ -42,19 +41,17 @@ public:
         switch (msg.type) {
         case MSG_FORTH_EXEC: {
             DEBUG("  xforth[%d] << '%s'\n", msg.sid, (char*)msg.buf);
+
             _active_sid = msg.sid;
             _abort.store(false);
 
             forth_vm(msg.buf, feedback);
 
-            if (--_active_lines == 0) {
-                ActorMsg eos { MSG_FORTH_DONE, msg.sid, msg.sid };
-                Sys.send(eos);
-            }
+            ActorMsg eos { MSG_FORTH_DONE, msg.sid, msg.sid };
+            Sys.send(eos);
         } break;
         case MSG_FORTH_DONE:
-            DEBUG("  xforth[%d] << DONE line_count=%d\n", msg.sid, msg.line_count);
-            _active_lines = msg.line_count;
+            DEBUG("  xforth[%d] << DONE\n", msg.sid);
             break;
         case MSG_GUI_TOUCH_TRIGGER:
             DEBUG("Brain Received Touch Event from Core 1! Position: (%d, %d)\n", 
