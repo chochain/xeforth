@@ -15,34 +15,63 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <style>
     body { font-family:'Courier New', monospace; font-size:14px; background:#121212; color:#00ff00; padding:10px; margin:0; }
-    #container { display: flex; height: 95vh; }
-    #log { flex: 0 0 60%; background-color:#1a1a1a; border: 1px solid #333; overflow-y:auto; padding:10px; box-sizing:border-box; }
+    #container { display: flex; height: 96vh; }
+    #control { flex: 0 0 5%; flex-direction: column; background-color:#1a1a1a; border: 1px solid #333; overflow-y:auto; padding:4px; box-sizing:border-box; }
+    .abort-btn { background:#800000; color:#fff; border:1x; padding:10px; font-weight:bold; cursor:pointer; margin-top:5px; border-sizing:border-box; }
+    .done-btn { background:#008000; color:#fff; border:1x; padding:10px; font-weight:bold; cursor:pointer; margin-top:5px; border-sizing:border-box; }
+    #log { flex: 0 0 55%; background-color:#1a1a1a; border: 1px solid #333; overflow-y:auto; padding:10px; box-sizing:border-box; }
     #tib-form { flex: 0 0 40%; display: flex; flex-direction: column; }
+    #tib-form form { flex: 1; display: flex; flex-direction: column; margin: 0; }
     #tib { flex: 1; background:#000; color:#00ff00; border:1px solid #333; resize:none; padding:10px; font-family:inherit; font-size:inherit; }
     .cmd-entry { color: #00bcff; margin-top: 5px; }
     .rsp-entry { color: #00ff00; white-space: pre-wrap; }
-    .abort-btn { background:#800000; color:#fff; border:1px; padding:10px; font-weight:bold; cursor:pointer; margin-top:5px; }
-    .done-btn  { background:#008000; color:#fff; border:1px; padding:10px; font-weight:bold; cursor:pointer; margin-top:5px; }
   </style>
 </head>
 <body>
   <div id='container'>
-    <div id='log'
-      hx-on::after-swap="if (this.scrollHeight - this.scrollTop - this.clientHeight < 300) this.scrollTop = this.scrollHeight">xeForth v1.0 Initialized...<br/></div>
-    <form id='tib-form'
-      hx-post='/execute'
-      hx-target='#log'
-      hx-swap='beforeend'
-      hx-on::after-request="this.reset()"
-      onsubmit="const log=document.getElementById('log'); log.innerHTML += '<div class=\'cmd-entry\'>&gt; ' + document.getElementById('tib').value.replace(/\n/g,'<br/>') + '</div>'; log.scrollTop = log.scrollHeight">
-    <textarea id='tib' name='forth_code'
-      placeholder='Type Forth code here...'
-      onkeydown="if(event.keyCode===13 && !event.shiftKey) {
-        event.preventDefault();
-        htmx.trigger('#tib-form', 'submit');
-      }"></textarea>
-    <div id="abort-control-slot">server will inject button here</div> 
-    </form>
+    <div id='control'>
+      <button id='abort' class="abort-btn"
+        data-sid  ="0"
+        hx-target ="#log" 
+        hx-swap   ="beforeend"
+        hx-on::before-request="
+          const sid = this.getAttribute('data-sid')
+          if (sid === '0') { event.preventDefault(); return; }
+          this.setAttribute('hx-post', `/abort?id=${sid}`);
+          htmx.process(this);
+        "
+        hx-on::response-error="
+          const log = document.getElementById('log');
+          const sid = this.getAttribute('data-sid');
+          const err = event.detail.xhr.statusText;
+          log.innerHTML += `<div style='color:red;'>[INTERRUPT] ${err} (Session ${sid})</div>`;
+          log.scrollTop = log.scrollHeight;
+          this.setAttribute('data-sid', '0');
+        ">X
+      </button>
+    </div>
+    <div id='log' 
+      hx-on::after-swap="
+        if (this.scrollHeight - this.scrollTop - this.clientHeight < 300) this.scrollTop = this.scrollHeight
+      ">xeForth v1.0 Initialized...<br/></div>
+    <div id='tib-form'>
+      <form hx-post='/execute' hx-target='#log' hx-swap='beforeend' 
+        hx-on::after-request="this.reset()"
+        onsubmit="
+          const log=document.getElementById('log'); 
+          log.innerHTML += 
+            '<div class=\'cmd-entry\'>&gt; ' +
+            document.getElementById('tib').value.replace(/\n/g,'<br/>') + 
+            '</div>'; 
+          log.scrollTop = log.scrollHeight">
+        <textarea id='tib' name='forth_code' placeholder='Type Forth code here...'
+          onkeydown="
+            if (event.keyCode===13 && !event.shiftKey) { 
+              event.preventDefault(); 
+              htmx.trigger(this.form, 'submit'); 
+            }"></textarea>
+      </form>
+    </div>
   </div>
 </body>
 </html>
@@ -89,14 +118,10 @@ static esp_err_t handle_abort(httpd_req_t *req) {
         Sys.send(x, 0, true);          /// priority message to front of queue
         
         // 3. Clear out the abort button from the caller's interface since it was triggered
-        httpd_resp_set_type(req, "text/html");
-        return httpd_resp_send(req,
-            "<div id='abort-control-slot' hx-swap-oob='true'></div>"
-            "<div style='color:red;'>[Interrupt Broadcasted to Session]</div>",
-            HTTPD_RESP_USE_STRLEN);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Execution Aborted");
     }
-
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid Session ID");
+    
     return ESP_FAIL;
 }
 
