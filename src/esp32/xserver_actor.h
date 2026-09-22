@@ -37,16 +37,10 @@ private:
         httpd_socket_send(_hd, _fd, "\r\n", 2, 0);
     }
 
-    void set_abort_button(bool on) {
-        char oob[256];
+    void set_session_id(uint32_t sid) {
+        char oob[128];
         snprintf(oob, sizeof(oob), 
-            "<div id='abort-control-slot' hx-swap-oob='true'>"
-            "<button class='%s-btn'"
-            "hx-post='/abort?id=%u' hx-target='#log' hx-swap='beforeend'>"
-            "%s (session %u)</button></div>",
-                 on ? "abort" : "done", this->id, on ? "STOP" : "DONE", this->id);
-        
-        // Send the button component instantly down the raw client pipe socket wire
+                 "<button id='abort' class='%s-btn' hx-swap-oob='outerHTML' data-sid='%u'>%u</button>", sid==0 ? "done" : "abort", sid, sid);
         send_chunk(oob, strlen(oob));
     }
 
@@ -61,8 +55,8 @@ private:
             "Connection: keep-alive\r\n\r\n";
         httpd_socket_send(_hd, _fd, headers, strlen(headers), 0);
         
-        // 2. Transmit the HTMX Out-Of-Bounds Abort Button locked onto this specific session ID
-        set_abort_button(true);
+        // 2. 🚀 THE OOB VALUE SWAP: Update the hidden metadata token container on the client browser!
+        set_session_id(this->id);
 
         // 3. Open the monospaced wrapper frame for the dynamic incoming text logs
         const char* open_wrapper = "<div class='rsp-entry'>";
@@ -121,8 +115,8 @@ public:
         // Close out the HTML visualization tag layers cleanly
         const char* final_wrapper = "</div><br/>";
         send_chunk(final_wrapper, strlen(final_wrapper));
-        
-        set_abort_button(false);
+
+        set_session_id(0);
         
         // Send the terminal empty chunk signaling end-of-transfer transaction
         httpd_socket_send(_hd, _fd, "0\r\n\r\n", 5, 0);
