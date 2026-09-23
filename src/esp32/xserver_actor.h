@@ -11,9 +11,10 @@
 /// calling receive(), so `delete this` is only safe when receives are serialized.
 class SessionActor : public BaseActor {
 private:
-    int            _fd;
-    httpd_handle_t _hd;
-    TimerHandle_t  _timer;
+    int               _fd;
+    httpd_handle_t    _hd;
+    TimerHandle_t     _timer;
+    SemaphoreHandle_t _mutex;    // esp_http_server is not thread-safe
 
     // Runs on the FreeRTOS timer daemon: must not block, and must not touch `this`.
     // Only the actor id travels, so a late timeout for a finished session lands on
@@ -27,24 +28,25 @@ private:
         Sys.send(m);    // zero-wait; if the queue is full the auto-reload timer simply fires again
     }
 
-    void send_chunk(const char *data) {
-        if (!data) return;
-        
-        size_t len = strlen(data);
-        if (len == 0) return;
-        
-        char hbuf[16];
-        snprintf(hbuf, sizeof(hbuf), "%zx\r\n", len);
-        httpd_socket_send(_hd, _fd, hbuf, strlen(hbuf), 0);
-        httpd_socket_send(_hd, _fd, data, len, 0);
-        httpd_socket_send(_hd, _fd, "\r\n", 2, 0);
+    void send_chunk(const char *data, size_t len, bool lock=true) {
+        if (!data || len==0 || _fd < 0) return;
+
+        bool ok = lock ? xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) == pdTRUE : true;
+        if (ok) {
+            char hbuf[16];
+            snprintf(hbuf, sizeof(hbuf), "%zx\r\n", len);
+            httpd_socket_send(_hd, _fd, hbuf, strlen(hbuf), 0);
+            httpd_socket_send(_hd, _fd, data, len, 0);
+            httpd_socket_send(_hd, _fd, "\r\n", 2, 0);
+            if (lock) xSemaphoreGive(_mutex);
+        }
     }
 
     void set_session_id(uint32_t sid) {
         char oob[128];
         snprintf(oob, sizeof(oob), 
                  "<button id='abort' class='%s-btn' hx-swap-oob='outerHTML' data-sid='%u'>%u</button>", sid==0 ? "done" : "abort", sid, sid);
-        send_chunk(oob);
+        send_chunk(oob, strlen(oob), false);
     }
 
     /// Sends the status line + headers + opening wrapper exactly once. Every path
@@ -77,13 +79,16 @@ private:
         Sys.send(abort);
 
         const char *msg = "\r\n[Forth execution timeout - aborted]\r\n";
-        send_chunk(msg);
+        send_chunk(msg, strlen(msg));
         terminate_session();
     }
 
 public:
     SessionActor(uint32_t actor_id, int client_fd, httpd_handle_t server_hd)
         : BaseActor(actor_id), _fd(client_fd), _hd(server_hd), _timer(nullptr) {
+
+        _mutex = xSemaphoreCreateBinary();
+        xSemaphoreGive(_mutex);
 #if 0
         char name[16];
         snprintf(name, sizeof(name), "ses_%u", (unsigned)actor_id);
@@ -108,14 +113,21 @@ public:
 
     ~SessionActor() override {
         stop_timer();   // fallback if destroyed without terminate_session()
+        if (_mutex) vSemaphoreDelete(_mutex);
     }
 
     void terminate_session() {
-        set_session_id(0);
+        if (_fd < 0) return;
         
-        // Send the terminal empty chunk signaling end-of-transfer transaction
-        httpd_socket_send(_hd, _fd, "0\r\n\r\n", 5, 0);
+        if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            set_session_id(0);
         
+            // Send the terminal empty chunk signaling end-of-transfer transaction
+            httpd_socket_send(_hd, _fd, "0\r\n\r\n", 5, 0);
+
+            _fd = -1;                  /// * prevent future write
+            xSemaphoreGive(_mutex);
+        }        
         // Unregister and erase this instance context from the post office maps
         Sys.unregister_actor(this->id);
         delete this;
@@ -127,7 +139,7 @@ public:
             DEBUG("session[%d] << '%s'\n", msg.target_id, (char*)msg.buf);
             // Output is progress: restart the stagnation window.
             if (_timer) xTimerReset(_timer, 0);
-            send_chunk(msg.buf);
+            send_chunk(msg.buf, strlen(msg.buf));
             break;
 
         case MSG_FORTH_DONE:
