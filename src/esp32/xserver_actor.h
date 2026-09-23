@@ -27,11 +27,14 @@ private:
         Sys.send(m);    // zero-wait; if the queue is full the auto-reload timer simply fires again
     }
 
-    void send_chunk(const char *data, size_t len) {
+    void send_chunk(const char *data) {
+        if (!data) return;
+        
+        size_t len = strlen(data);
         if (len == 0) return;
         
         char hbuf[16];
-        snprintf(hbuf, sizeof(hbuf), "%zX\r\n", len);
+        snprintf(hbuf, sizeof(hbuf), "%zx\r\n", len);
         httpd_socket_send(_hd, _fd, hbuf, strlen(hbuf), 0);
         httpd_socket_send(_hd, _fd, data, len, 0);
         httpd_socket_send(_hd, _fd, "\r\n", 2, 0);
@@ -41,7 +44,7 @@ private:
         char oob[128];
         snprintf(oob, sizeof(oob), 
                  "<button id='abort' class='%s-btn' hx-swap-oob='outerHTML' data-sid='%u'>%u</button>", sid==0 ? "done" : "abort", sid, sid);
-        send_chunk(oob, strlen(oob));
+        send_chunk(oob);
     }
 
     /// Sends the status line + headers + opening wrapper exactly once. Every path
@@ -57,10 +60,6 @@ private:
         
         // 2. 🚀 THE OOB VALUE SWAP: Update the hidden metadata token container on the client browser!
         set_session_id(this->id);
-
-        // 3. Open the monospaced wrapper frame for the dynamic incoming text logs
-        const char* open_wrapper = "<div class='rsp-entry'>";
-        send_chunk(open_wrapper, strlen(open_wrapper));
     }
 
     void stop_timer() {
@@ -78,7 +77,7 @@ private:
         Sys.send(abort);
 
         const char *msg = "\r\n[Forth execution timeout - aborted]\r\n";
-        send_chunk(msg, strlen(msg));
+        send_chunk(msg);
         terminate_session();
     }
 
@@ -112,10 +111,6 @@ public:
     }
 
     void terminate_session() {
-        // Close out the HTML visualization tag layers cleanly
-        const char* final_wrapper = "</div><br/>";
-        send_chunk(final_wrapper, strlen(final_wrapper));
-
         set_session_id(0);
         
         // Send the terminal empty chunk signaling end-of-transfer transaction
@@ -132,7 +127,7 @@ public:
             DEBUG("session[%d] << '%s'\n", msg.target_id, (char*)msg.buf);
             // Output is progress: restart the stagnation window.
             if (_timer) xTimerReset(_timer, 0);
-            send_chunk(msg.buf, strlen(msg.buf));
+            send_chunk(msg.buf);
             break;
 
         case MSG_FORTH_DONE:
