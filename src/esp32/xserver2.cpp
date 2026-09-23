@@ -14,23 +14,34 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
   <title>xeForth Panel</title>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <style>
-    body { font-family:'Courier New', monospace; font-size:14px; background:#121212; color:#00ff00; padding:10px; margin:0; }
-    #container { display: flex; height: 96vh; }
-    #control { flex: 0 0 5%; flex-direction: column; background-color:#1a1a1a; border: 1px solid #333; overflow-y:auto; padding:4px; box-sizing:border-box; }
-    .abort-btn { background:#800000; color:#fff; border:1x; padding:10px; font-weight:bold; cursor:pointer; margin-top:5px; border-sizing:border-box; }
-    .done-btn { background:#008000; color:#fff; border:1x; padding:10px; font-weight:bold; cursor:pointer; margin-top:5px; border-sizing:border-box; }
-    #log { flex: 0 0 55%; background-color:#1a1a1a; border: 1px solid #333; overflow-y:auto; padding:10px; box-sizing:border-box; }
-    #tib-form { flex: 0 0 40%; display: flex; flex-direction: column; }
+    body { font-family:'Courier New', monospace; font-size:14px; background:#111; color:#0f0; padding:10px; margin:0; }
+    #container { display: flex; height: 95vh; }
+    #control   { flex: 0 1 auto; flex-direction: column; background-color:#222; }
+    .abort-btn { background:#800; color:#fff; font-weight:bold; cursor:pointer; }
+    .done-btn  { background:#080; color:#fff; font-weight:bold; cursor:pointer; }
+    #log { flex: 0 0 60%; background-color:#222; border: 1px solid #333; overflow-y:auto; padding:10px; box-sizing:border-box; white-space: pre-wrap; }
+    #tib-form  { flex: 0 0 40%; display: flex; flex-direction: column; }
     #tib-form form { flex: 1; display: flex; flex-direction: column; margin: 0; }
-    #tib { flex: 1; background:#000; color:#00ff00; border:1px solid #333; resize:none; padding:10px; font-family:inherit; font-size:inherit; }
-    .cmd-entry { color: #00bcff; margin-top: 5px; }
-    .rsp-entry { color: #00ff00; white-space: pre-wrap; }
+    #tib { flex: 1; background:#000; color:#0f0; border:1px solid #333; resize:none; padding:10px; font-family:inherit; font-size:inherit; }
+    .cmd-entry { color: #0cf; margin-top: 5px; }
   </style>
 </head>
 <body>
+  <div id="staging" style="display:none;"
+    hx-on::after-swap="
+      const log = document.getElementById('log');
+      // .innerText treats everything strictly as plain text data, 
+      // forcing the browser to escape <, >, and & natively on the fly!
+      const raw = this.innerText; 
+      if (raw.length > 0) {
+        log.appendChild(document.createTextNode(raw));
+        this.innerText = ''; // Flush staging area immediately
+        log.scrollTop = log.scrollHeight;
+      }
+    "></div>
   <div id='container'>
     <div id='control'>
-      <button id='abort' class="abort-btn"
+      <button id='abort' class="done-btn"
         data-sid  ="0"
         hx-target ="#log" 
         hx-swap   ="beforeend"
@@ -47,7 +58,7 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
           log.innerHTML += `<div style='color:red;'>[INTERRUPT] ${err} (Session ${sid})</div>`;
           log.scrollTop = log.scrollHeight;
           this.setAttribute('data-sid', '0');
-        ">X
+        ">0
       </button>
     </div>
     <div id='log' 
@@ -55,7 +66,7 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
         if (this.scrollHeight - this.scrollTop - this.clientHeight < 300) this.scrollTop = this.scrollHeight
       ">xeForth v1.0 Initialized...<br/></div>
     <div id='tib-form'>
-      <form hx-post='/execute' hx-target='#log' hx-swap='beforeend' 
+      <form hx-post='/execute' hx-target='#staging' hx-swap='innerHTML' 
         hx-on::after-request="this.reset()"
         onsubmit="
           const log=document.getElementById('log'); 
