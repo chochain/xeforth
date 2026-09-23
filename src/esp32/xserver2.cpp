@@ -17,8 +17,8 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
     body { font-family:'Courier New', monospace; font-size:14px; background:#111; color:#0f0; padding:10px; margin:0; }
     #container { display: flex; height: 95vh; }
     #control   { flex: 0 1 auto; flex-direction: column; background-color:#222; }
-    .abort-btn { background:#800; color:#fff; font-weight:bold; cursor:pointer; }
-    .done-btn  { background:#080; color:#fff; font-weight:bold; cursor:pointer; }
+    .abort-btn { background:#555; color:#aaa; border:none; font-weight:bold; cursor:not-allowed; width:100%; transition: 0.2s; }
+    .abort-btn[data-run="true"] { background:#f00; color:#fff; cursor:pointer; }
     #log { flex: 0 0 60%; background-color:#222; border: 1px solid #333; overflow-y:auto; padding:10px; box-sizing:border-box; white-space: pre-wrap; }
     #tib-form  { flex: 0 0 40%; display: flex; flex-direction: column; }
     #tib-form form { flex: 1; display: flex; flex-direction: column; margin: 0; }
@@ -41,13 +41,15 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
     "></div>
   <div id='container'>
     <div id='control'>
-      <button id='abort' class="done-btn"
+      <button id='abort' class="abort-btn"
+        data-run  ="false"
         data-sid  ="0"
         hx-target ="#log" 
         hx-swap   ="beforeend"
         hx-on::before-request="
-          const sid = this.getAttribute('data-sid')
-          if (sid === '0') { event.preventDefault(); return; }
+          const sid = this.getAttribute('data-sid');
+          const na  = this.getAttribute('data-run') == 'false';
+          if (na || sid === '0') { event.preventDefault(); return; }
           this.setAttribute('hx-post', `/abort?id=${sid}`);
           htmx.process(this);
         "
@@ -67,7 +69,19 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
       ">xeForth v1.0 Initialized...<br/></div>
     <div id='tib-form'>
       <form hx-post='/execute' hx-target='#staging' hx-swap='innerHTML' 
-        hx-on::after-request="this.reset()"
+        hx-on::before-request="
+          document.getElementById('tib').value='';
+          // Generate a temporary local timestamp to act as an offline unique session ID
+          const sid = Math.floor(Date.now() % 100000);   // local session id
+          const btn = document.getElementById('abort');
+          btn.setAttribute('data-sid', sid);
+          btn.setAttribute('data-run', 'true');
+        "
+        hx-on::after-request="
+          const btn = document.getElementById('abort');
+          btn.setAttribute('data-run', 'false');
+          this.reset();
+        "
         onsubmit="
           const log=document.getElementById('log'); 
           log.innerHTML += 
