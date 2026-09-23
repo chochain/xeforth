@@ -28,25 +28,18 @@ private:
         Sys.send(m);    // zero-wait; if the queue is full the auto-reload timer simply fires again
     }
 
-    void send_chunk(const char *data, size_t len, bool lock=true) {
+    void send_chunk(const char *data, size_t len) {
         if (!data || len==0 || _fd < 0) return;
 
-        bool ok = lock ? xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) == pdTRUE : true;
-        if (ok) {
+        if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             char hbuf[16];
             snprintf(hbuf, sizeof(hbuf), "%zx\r\n", len);
             httpd_socket_send(_hd, _fd, hbuf, strlen(hbuf), 0);
             httpd_socket_send(_hd, _fd, data, len, 0);
             httpd_socket_send(_hd, _fd, "\r\n", 2, 0);
-            if (lock) xSemaphoreGive(_mutex);
+            
+            xSemaphoreGive(_mutex);
         }
-    }
-
-    void set_session_id(uint32_t sid) {
-        char oob[128];
-        snprintf(oob, sizeof(oob), 
-                 "<button id='abort' class='%s-btn' hx-swap-oob='outerHTML' data-sid='%u'>%u</button>", sid==0 ? "done" : "abort", sid, sid);
-        send_chunk(oob, strlen(oob), false);
     }
 
     /// Sends the status line + headers + opening wrapper exactly once. Every path
@@ -59,9 +52,6 @@ private:
             "Transfer-Encoding: chunked\r\n"
             "Connection: keep-alive\r\n\r\n";
         httpd_socket_send(_hd, _fd, headers, strlen(headers), 0);
-        
-        // 2. 🚀 THE OOB VALUE SWAP: Update the hidden metadata token container on the client browser!
-        set_session_id(this->id);
     }
 
     void stop_timer() {
@@ -119,15 +109,15 @@ public:
     void terminate_session() {
         if (_fd < 0) return;
         
+        // Send the terminal empty chunk signaling end-of-transfer transaction
         if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            set_session_id(0);
-        
             // Send the terminal empty chunk signaling end-of-transfer transaction
             httpd_socket_send(_hd, _fd, "0\r\n\r\n", 5, 0);
 
             _fd = -1;                  /// * prevent future write
             xSemaphoreGive(_mutex);
         }        
+
         // Unregister and erase this instance context from the post office maps
         Sys.unregister_actor(this->id);
         delete this;
