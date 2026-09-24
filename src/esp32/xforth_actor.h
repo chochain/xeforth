@@ -54,8 +54,7 @@ public:
             DEBUG("  xforth[%d] << DONE\n", msg.sid);
             break;
         case MSG_GUI_TOUCH_TRIGGER:
-            DEBUG("Brain Received Touch Event from Core 1! Position: (%d, %d)\n", 
-                msg.touch.x, msg.touch.y);
+            LOG("xgl touch: (%d, %d)\n", msg.touch.x, msg.touch.y);
             break;
         case MSG_FORTH_ABORT: if (msg.sid == _active_sid) {
             DEBUG("  xforth[%d] << ABORT\n", msg.sid);
