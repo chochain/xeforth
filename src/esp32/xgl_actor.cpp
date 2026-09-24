@@ -79,7 +79,7 @@ void my_touchpad_read(lv_indev_drv_t *touch_drv, lv_indev_data_t *data) {
 void XGL::receive(const ActorMsg &msg) {
     // ️Apply Backpressure: Block the calling Core 0 worker task if Core 1 is saturated
     if (xQueueSend(_mailbox, &msg, 0) != pdTRUE) {
-        ERR("[SYSTEM WARNING] XGL Mailbox full, msg dropped.");
+        LOG("XGL full drop: '%s'", (char*)msg.buf);
     }
 }
 
