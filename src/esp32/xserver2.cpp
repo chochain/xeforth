@@ -7,7 +7,7 @@
 #include "xserver_actor.h"
 #include "xserver2.h"
 
-static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
+static const char HTML_INDEX[] PROGMEM = R"XX(<!DOCTYPE html>
 <html>
 <head>
   <meta charset='UTF-8'>
@@ -19,7 +19,7 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
     #control   { flex: 0 1 auto; flex-direction: column; background-color:#222; }
     .abort-btn { background:#555; color:#aaa; border:none; font-weight:bold; cursor:not-allowed; width:100%; transition: 0.2s; }
     .abort-btn[data-run="true"] { background:#f00; color:#fff; cursor:pointer; }
-    #log { flex: 0 0 60%; background-color:#222; border: 1px solid #333; overflow-y:auto; padding:10px; box-sizing:border-box; white-space: pre-wrap; }
+    #log { flex: 0 0 58%; background-color:#222; border: 1px solid #333; overflow-y:auto; padding:10px; box-sizing:border-box; white-space: pre-wrap; }
     #tib-form  { flex: 0 0 40%; display: flex; flex-direction: column; }
     #tib-form form { flex: 1; display: flex; flex-direction: column; margin: 0; }
     #tib { flex: 1; background:#000; color:#0f0; border:1px solid #333; resize:none; padding:10px; font-family:inherit; font-size:inherit; }
@@ -44,7 +44,7 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
       <button id='abort' class="abort-btn"
         data-run  ="false"
         data-sid  ="0"
-        hx-target ="#log" 
+        hx-target ="#log"
         hx-swap   ="beforeend"
         hx-on::before-request="
           const sid = this.getAttribute('data-sid');
@@ -60,7 +60,7 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
           log.innerHTML += `<div style='color:red;'>[INTERRUPT] ${err} (Session ${sid})</div>`;
           log.scrollTop = log.scrollHeight;
           this.setAttribute('data-sid', '0');
-        ">0
+        ">X
       </button>
     </div>
     <div id='log' 
@@ -72,7 +72,7 @@ static constexpr char *HTML_INDEX PROGMEM = R"XX(<!DOCTYPE html>
         hx-on::before-request="
           document.getElementById('tib').value='';
           // Generate a temporary local timestamp to act as an offline unique session ID
-          const sid = Math.floor(Date.now() % 100000);   // local session id
+          const sid = Math.floor(Date.now() % 10000);   // local session id
           const btn = document.getElementById('abort');
           btn.setAttribute('data-sid', sid);
           btn.setAttribute('data-run', 'true');
@@ -204,7 +204,7 @@ void XServer::setup() {
         .method = HTTP_GET,
         .handler = [](httpd_req_t *req) {
             httpd_resp_set_type(req, "text/html");
-            return httpd_resp_send(req, HTML_INDEX, HTTPD_RESP_USE_STRLEN);
+            return httpd_resp_send(req, (char*)HTML_INDEX, HTTPD_RESP_USE_STRLEN);
         },
         .user_ctx = this
     };
