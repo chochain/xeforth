@@ -258,7 +258,8 @@ void nest(VM& vm) {
              else {                                  /// * yes, loop done!
                  RS.pop();                           /// * pop off loop counter
                  IP += sizeof(IU);                   /// * next instr.
-             });
+             }
+             yield());
         CASE(LOOP,
              if (GT(RS[-2], RS[-1] += DU1)) {        ///> loop done?
                  IP = IGET(IP);                      /// * no, loop back
@@ -266,7 +267,8 @@ void nest(VM& vm) {
              else {                                  /// * yes, done
                  RS.pop(); RS.pop();                 /// * pop off counters
                  IP += sizeof(IU);                   /// * next instr.
-             });
+             }
+             yield());
         CASE(LIT,
              SS.push(TOS);
              IP  = DALIGN(IP);                       /// * 32-bit data align (WASM only)
