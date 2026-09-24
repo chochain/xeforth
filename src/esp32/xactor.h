@@ -14,8 +14,8 @@
 #define QUE_BUF_SZ      128
 
 #define ERR(msg)        Serial.println(msg)
-//#define DEBUG(fmt, ...)
-#define DEBUG(fmt, ...) Serial.printf(fmt, __VA_ARGS__)
+#define DEBUG(fmt, ...)
+//#define DEBUG(fmt, ...) Serial.printf(fmt, __VA_ARGS__)
 #define LOG(fmt, ...)   Serial.printf(fmt, __VA_ARGS__)
 
 #define FORTH_ACTOR_GLOBAL_ID 1
@@ -85,6 +85,9 @@ private:
             /// blocked at 0% CPU until new msg arrived
             if (xQueueReceive(sys->_queue, &msg, portMAX_DELAY) == pdTRUE) {
                 BaseActor *actor = sys->get_actor(msg.target_id);
+                LOG("actor%d.%d >> '%s'\n",
+                    msg.target_id, msg.sid,
+                    msg.type==MSG_FORTH_DONE ? "DONE" : (char*)msg.buf);
                 if (actor) actor->receive(msg);
                 /// no delay here, so no context switching
             }
@@ -132,13 +135,16 @@ public:
     /// Bounded-wait send. ONLY call from threads that are not this queue's
     /// consumer (Forth task, httpd thread). Never from a dispatcher worker.
     bool send(const ActorMsg &msg, TickType_t ticks=0, bool priority=false) {
-        DEBUG("actor[%d] << '%s'\n",
-              msg.target_id,
-              msg.type==MSG_FORTH_DONE ? "DONE" : (char*)msg.buf);
+        LOG("actor%d.%d << '%s'",
+            msg.target_id, msg.sid,
+            msg.type==MSG_FORTH_DONE ? "DONE" : (char*)msg.buf);
         if (!_queue) return false;
-        return priority
+        bool rst = priority
             ? xQueueSendToFront(_queue, &msg, ticks) == pdPASS
             : xQueueSend(_queue, &msg, ticks) == pdPASS;
+        LOG("%s", rst ? "\n" : " => queue full\n");
+        
+        return rst;
     }
 
     BaseActor *get_actor(uint32_t id) {
