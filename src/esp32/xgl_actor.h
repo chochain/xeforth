@@ -67,7 +67,7 @@ public:
         _chart(NULL),
         _cpu_series(NULL),
         _ram_series(NULL) {
-        _mailbox = xQueueCreate(10, sizeof(ActorMsg));
+        _mailbox = xQueueCreate(20, sizeof(ActorMsg));
     }
 
     void receive(const ActorMsg &msg) override;
