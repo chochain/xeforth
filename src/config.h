@@ -101,8 +101,7 @@ typedef int32_t         DU;
     #include "esp_task_wdt.h"
     #define DALIGN(sz)      (sz)
     #define to_string(i)    string(String(i).c_str())
-//    #define yield()         vTaskDelay(0)
-    #define yield()         esp_task_wdt_reset()
+    #define yield()         vTaskDelay(1)
 
 #else  // !(ARDUINO || ESP32)
     #include <chrono>
