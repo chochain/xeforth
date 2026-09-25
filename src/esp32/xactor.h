@@ -12,6 +12,7 @@
 
 #define QUE_DEPTH       20
 #define QUE_BUF_SZ      128
+#define QUE_WAIT_TICKS  5
 
 #define ERR(msg)        Serial.println(msg)
 #define DEBUG(fmt, ...)
@@ -85,7 +86,7 @@ private:
             /// blocked at 0% CPU until new msg arrived
             if (xQueueReceive(sys->_queue, &msg, portMAX_DELAY) == pdTRUE) {
                 BaseActor *actor = sys->get_actor(msg.target_id);
-                LOG("actor%d.%d >> '%s'\n",
+                LOG("\nactor%d.%d >> '%s'",
                     msg.target_id, msg.sid,
                     msg.type==MSG_FORTH_DONE ? "DONE" : (char*)msg.buf);
                 if (actor) actor->receive(msg);
@@ -134,15 +135,15 @@ public:
 
     /// Bounded-wait send. ONLY call from threads that are not this queue's
     /// consumer (Forth task, httpd thread). Never from a dispatcher worker.
-    bool send(const ActorMsg &msg, TickType_t ticks=0, bool priority=false) {
-        LOG("actor%d.%d << '%s'",
+    bool send(const ActorMsg &msg, TickType_t ticks=QUE_WAIT_TICKS, bool priority=false) {
+        LOG("\nactor%d.%d << '%s'",
             msg.target_id, msg.sid,
             msg.type==MSG_FORTH_DONE ? "DONE" : (char*)msg.buf);
         if (!_queue) return false;
         bool rst = priority
             ? xQueueSendToFront(_queue, &msg, ticks) == pdPASS
             : xQueueSend(_queue, &msg, ticks) == pdPASS;
-        LOG("%s", rst ? "\n" : " => queue full\n");
+        LOG("%s", rst ? "" : " => queue full");
         
         return rst;
     }
