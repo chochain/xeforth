@@ -243,6 +243,16 @@ void nest(VM& vm) /* tail call */ {
 #endif 
 
 void nest(VM& vm) {
+    auto my_yield = []() {
+#if (ARDUINO || ESP32)     
+        static uint32_t ticks = 0;
+        if (++ticks < 100) return;
+        vTaskDelay(1);
+        ticks = 0;
+#else
+        yield();
+#endif // (ARDUINO || ESP32)        
+    };
     vm.state = NEST;                                 /// * activate VM
     while (IP) {
         IU ix = IGET(IP);                            ///< fetched opcode, hopefully in register
@@ -258,8 +268,8 @@ void nest(VM& vm) {
              else {                                  /// * yes, loop done!
                  RS.pop();                           /// * pop off loop counter
                  IP += sizeof(IU);                   /// * next instr.
-             }
-             yield());
+//                 my_yield();                         /// * forced yield (watchdog)
+             });
         CASE(LOOP,
              if (GT(RS[-2], RS[-1] += DU1)) {        ///> loop done?
                  IP = IGET(IP);                      /// * no, loop back
@@ -267,8 +277,8 @@ void nest(VM& vm) {
              else {                                  /// * yes, done
                  RS.pop(); RS.pop();                 /// * pop off counters
                  IP += sizeof(IU);                   /// * next instr.
-             }
-             yield());
+//                 my_yield();
+             });
         CASE(LIT,
              SS.push(TOS);
              IP  = DALIGN(IP);                       /// * 32-bit data align (WASM only)
@@ -542,6 +552,7 @@ constexpr Code g_rom[] = {                 ///< ROM
 #endif // DO_MULTITASK    
     /// @defgroup Debug ops
     /// @{
+    CODE("pause", yield()),
     CODE("abort", TOS = -DU1; SS.clear(); RS.clear()),       /// clear ss, rs
     CODE("here",  PUSH(HERE)),
     IMMD("'",     IU w = find(WORD()); if (w) PUSH(w)),
