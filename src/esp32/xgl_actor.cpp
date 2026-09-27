@@ -62,7 +62,7 @@ void my_touchpad_read(lv_indev_drv_t *touch_drv, lv_indev_data_t *data) {
 
             static uint32_t timer = millis() + 100;
             if (millis() > timer) { 
-                ActorMsg touch_msg { MSG_GUI_TOUCH_TRIGGER, FORTH_ACTOR_GLOBAL_ID };
+                ActorMsg touch_msg { MSG_GUI_TOUCH_TRIGGER, FORTH_ACTOR_ID };
                 touch_msg.touch.x = touchX;
                 touch_msg.touch.y = touchY;
                 touch_msg.touch.state = 1;

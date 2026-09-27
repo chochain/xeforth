@@ -63,7 +63,7 @@ private:
         while (true) {
             if (s.read_idx >= s.total_len) {
                 // All text segments consumed. Safely trigger completion event.
-                ActorMsg done { MSG_FORTH_DONE, COORDINATOR_ACTOR_GLOBAL_ID, s.sid };
+                ActorMsg done { MSG_FORTH_DONE, SESMUX_ACTOR_ID, s.sid };
                 Sys.send(done);
                 return; // 🟢 Safe exit, 0 recursion risk
             }
@@ -87,7 +87,7 @@ private:
 
             if (w > 0) {
                 // Valid command found! Dispatch to Forth VM and break the loop
-                ActorMsg m { MSG_FORTH_EXEC, FORTH_ACTOR_GLOBAL_ID, s.sid };
+                ActorMsg m { MSG_FORTH_EXEC, FORTH_ACTOR_ID, s.sid };
                 memcpy(m.buf, line_buf, w + 1);
                 Sys.send(m);
                 return; // 🟢 Exit function. Wait for EOF handshake token.
@@ -108,7 +108,7 @@ private:
             s.eof_wait = false;
 
             // 1. Handshake ACK back to Forth Actor to release its lock state
-            ActorMsg ack{ MSG_FORTH_EOF_ACK, FORTH_ACTOR_GLOBAL_ID, s.sid };
+            ActorMsg ack{ MSG_FORTH_EOF_ACK, FORTH_ACTOR_ID, s.sid };
             Sys.send(ack);
 
             // 2. Move to the next string segment inside PSRAM

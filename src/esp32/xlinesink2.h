@@ -34,7 +34,7 @@ private:
     }
 
     bool post(ActorMsgType type, const char *line = "", size_t n = 0) {
-        ActorMsg m { type, FORTH_ACTOR_GLOBAL_ID, _sid };    ///< zeroed: buf is NUL-terminated for any n < QUE_BUF_SZ
+        ActorMsg m { type, FORTH_ACTOR_ID, _sid };    ///< zeroed: buf is NUL-terminated for any n < QUE_BUF_SZ
         if (type == MSG_FORTH_DONE) m.line_count = n;
         else if (n > 0) memcpy(m.buf, line, n);
         if (!Sys.send(m, FORTH_POST_SLOW)) {                 /// * slow feed to Forth VM
@@ -50,7 +50,7 @@ private:
     sink_result_t reject(sink_result_t why, const char *text) {
         DEBUG("linesink::reject[%d] '%s'", _sid, text);
         
-        ActorMsg x { MSG_FORTH_ABORT, FORTH_ACTOR_GLOBAL_ID, _sid };
+        ActorMsg x { MSG_FORTH_ABORT, FORTH_ACTOR_ID, _sid };
         Sys.send(x, 0, true);
 
         ActorMsg fb { MSG_FORTH_FEEDBACK, _sid, _sid };

@@ -66,7 +66,7 @@ private:
     void handle_timeout() {
         // Stop the Forth line too. Closing the connection alone would leave the VM
         // burning CPU on a job whose output now has nowhere to go.
-        ActorMsg abort{ MSG_FORTH_ABORT, FORTH_ACTOR_GLOBAL_ID, this->id };
+        ActorMsg abort{ MSG_FORTH_ABORT, FORTH_ACTOR_ID, this->id };
         Sys.send(abort);
 
         const char *msg = "\r\n[Forth execution timeout - aborted]\r\n";
@@ -108,7 +108,7 @@ public:
     }
 
     void exec_eof_ack(uint32_t sid) {
-        ActorMsg ack{ MSG_FORTH_EOF_ACK, FORTH_ACTOR_GLOBAL_ID, sid };
+        ActorMsg ack{ MSG_FORTH_EOF_ACK, FORTH_ACTOR_ID, sid };
         Sys.send(ack);
     }
 

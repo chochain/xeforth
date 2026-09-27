@@ -21,14 +21,14 @@ private:
         ++_feedback_cnt;
 
         // 1. Route stream chunks straight to the static SessionCoordinator
-        ActorMsg fb { MSG_FORTH_FEEDBACK, COORDINATOR_ACTOR_GLOBAL_ID, _active_sid };
+        ActorMsg fb { MSG_FORTH_FEEDBACK, SESMUX_ACTOR_ID, _active_sid };
         int sz = std::min(len, QUE_BUF_SZ - 1);
         memcpy(fb.buf, rst, sz);
         fb.buf[sz] = '\0';
         Sys.send(fb);
 
         // 2. Cross-Core Actor Flow: Send feedback straight across cores to the XGL Display Actor (ID 2)
-        ActorMsg g { MSG_GUI_DRAW_CMD, GUI_ACTOR_GLOBAL_ID, _active_sid };
+        ActorMsg g { MSG_GUI_DRAW_CMD, GUI_ACTOR_ID, _active_sid };
         memcpy(g.buf, rst, sz);
         g.buf[sz] = '\0';
         Sys.send(g);
@@ -37,7 +37,7 @@ private:
 public:
     ForthActor(uint32_t actor_id) : BaseActor(actor_id) {
         _abort.store(false);
-        LOG("[SYSTEM] Forth Actor Registered (ID: %d)\n", FORTH_ACTOR_GLOBAL_ID);
+        LOG("[SYSTEM] Forth Actor Registered (ID: %d)\n", FORTH_ACTOR_ID);
     }
 
     void receive(const ActorMsg &msg) override {
@@ -52,7 +52,7 @@ public:
             
             // Core Generation complete. Send EOF and pause execution of the next command.
             {
-                ActorMsg eof { MSG_FORTH_EXEC_EOF, COORDINATOR_ACTOR_GLOBAL_ID, msg.sid };
+                ActorMsg eof { MSG_FORTH_EXEC_EOF, SESMUX_ACTOR_ID, msg.sid };
                 eof.feedback_sent = _feedback_cnt;
                 Sys.send(eof);
             }
@@ -62,7 +62,7 @@ public:
             DEBUG("  xforth[%d] << EOF_ACT\n", msg.sid);
             // The Coordinator confirmed network buffers are clear. Safe to close transaction out-of-order free!
             {
-                ActorMsg done { MSG_FORTH_DONE, COORDINATOR_ACTOR_GLOBAL_ID, msg.sid };
+                ActorMsg done { MSG_FORTH_DONE, SESMUX_ACTOR_ID, msg.sid };
                 Sys.send(done);
             }
             break;
