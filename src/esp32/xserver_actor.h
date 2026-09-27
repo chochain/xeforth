@@ -15,6 +15,7 @@ private:
     httpd_handle_t    _hd;
     TimerHandle_t     _timer;
     SemaphoreHandle_t _mutex;    // esp_http_server is not thread-safe
+    SemaphoreHandle_t _tx_sema;  // transmission hand-shaker
 
     // Runs on the FreeRTOS timer daemon: must not block, and must not touch `this`.
     // Only the actor id travels, so a late timeout for a finished session lands on
@@ -106,6 +107,11 @@ public:
         if (_mutex) vSemaphoreDelete(_mutex);
     }
 
+    void exec_eof_ack(uint32_t sid) {
+        ActorMsg ack{ MSG_FORTH_EOF_ACK, FORTH_ACTOR_GLOBAL_ID, sid };
+        Sys.send(ack);
+    }
+
     void terminate_session() {
         if (_fd < 0) return;
         
@@ -132,8 +138,13 @@ public:
             send_chunk(msg.buf, strlen(msg.buf));
             break;
 
+        case MSG_FORTH_EXEC_EOF:
+            DEBUG("session[%d] << EXEC_EOF\n", msg.target_id);
+            exec_eof_ack(msg.target_id);
+            break;
+
         case MSG_FORTH_DONE:
-            DEBUG("session[%d] DONE\n", msg.target_id);
+            DEBUG("session[%d] << DONE\n", msg.target_id);
             terminate_session();
             break;
 
