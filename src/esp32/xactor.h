@@ -10,46 +10,42 @@
 #include <algorithm>
 #include "esp_http_server.h"
 
-#define QUE_DEPTH       20
+#define QUE_DEPTH       32
 #define QUE_BUF_SZ      128
 #define QUE_WAIT_TICKS  5
 
-#define ERR(msg)        Serial.println(msg)
-#define DEBUG(fmt, ...)
-//#define DEBUG(fmt, ...) Serial.printf(fmt, __VA_ARGS__)
 #define LOG(fmt, ...)   Serial.printf(fmt, __VA_ARGS__)
+#define DEBUG(fmt, ...) Serial.printf(fmt, __VA_ARGS__)
 
-#define FORTH_ACTOR_GLOBAL_ID 1
-#define GUI_ACTOR_GLOBAL_ID   2
-
-typedef enum {
-    JOB_BATCH    = 0,         /// submit-and-collect: queued, no live interaction expected
-    JOB_DEMAND   = 1,         /// interactive/time-sharing: low-latency, session held open
-    JOB_REALTIME = 2          /// preemptive: serviced ahead of BATCH/DEMAND, not FIFO order
-} job_class_t;
+// Static Global Target Registry IDs
+#define FORTH_ACTOR_GLOBAL_ID       1
+#define GUI_ACTOR_GLOBAL_ID         2
+#define COORDINATOR_ACTOR_GLOBAL_ID 3  // Central Traffic Cop Actor ID
 
 enum ActorMsgType {
-    MSG_WEB_SUBMIT,           /// Incoming raw multi-line payload block
-    MSG_FORTH_EXEC,           /// Process a single newline-delimited command string
-    MSG_FORTH_FEEDBACK,       /// Text streamed back dynamically by the Forth VM execution layer
-    MSG_FORTH_DONE,           /// Explicit end-of-submission marker for an active session block
-    MSG_FORTH_ABORT,          /// Emergency priority break request to kill a long run
+    MSG_FORTH_EXEC,           /// Forward individual raw command line to VM
+    MSG_FORTH_FEEDBACK,       /// Text streamed back dynamically by the Forth VM
+    MSG_FORTH_EXEC_EOF,       /// Generation checkpoint completed by Forth
+    MSG_FORTH_EOF_ACK,        /// Network Layer verification callback handshake
+    MSG_FORTH_DONE,           /// Explicit macro execution processing complete
+    MSG_FORTH_ABORT,          /// Emergency priority drop request
+    MSG_SESSION_TIMEOUT,      /// Stagnation safety event
     MSG_GUI_DRAW_CMD,         /// Forward string outputs straight to the LVGL terminal
     MSG_GUI_TOUCH_TRIGGER,    /// Touch coordinate packets dispatched from Core 1 to Core 0
-    MSG_SYS_TELEMETRY,        /// Periodic hardware memory metric tracking frame
-    MSG_SESSION_TIMEOUT       /// network inactivity guard
+    MSG_SYS_TELEMETRY         /// Periodic hardware memory metric tracking frame
 };
 
 struct ActorMsg {
-    ActorMsgType type;
-    uint32_t     target_id;   /// Unique ID of the destination Actor
-    uint32_t     sid;         /// Session id (== SessionActor id). Distinct from fd on purpose.
-    int          fd;          /// Client socket handle or original source tracking reference
-    httpd_handle_t hd;        /// Web server handle context
+    ActorMsgType   type;
+    uint32_t       target_id;   /// Destination Actor target register
+    uint32_t       sid;         /// Session ID tracking tag
+    int            fd;          /// Socket file descriptor tracking hook
+    httpd_handle_t hd;          /// Webserver process descriptor link
     
     union {
-        char buf[QUE_BUF_SZ]; /// Standard 128 bytes text string space
+        char buf[QUE_BUF_SZ];   /// Inline 128-byte data transmission window
         uint32_t line_count;
+        uint32_t feedback_sent;
         struct {
             int16_t x;
             int16_t y;
@@ -141,8 +137,8 @@ public:
             msg.type==MSG_FORTH_DONE ? "DONE" : (char*)msg.buf);
         if (!_queue) return false;
         bool rst = priority
-            ? xQueueSendToFront(_queue, &msg, ticks) == pdPASS
-            : xQueueSend(_queue, &msg, ticks) == pdPASS;
+             ? xQueueSendToFront(_queue, &msg, ticks) == pdPASS
+             : xQueueSend(_queue, &msg, ticks) == pdPASS;
         LOG("%s", rst ? "" : " => queue full");
         
         return rst;
@@ -153,11 +149,9 @@ public:
         auto it = _registry.find(id);
         BaseActor* actor = (it != _registry.end()) ? it->second : nullptr;
         xSemaphoreGive(_mutex);
-        
         return actor;
     }
 };
 
 extern ActorSystem Sys;
-
 #endif // _XACTOR_H
