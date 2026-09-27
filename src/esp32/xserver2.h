@@ -23,6 +23,7 @@ public:
 
     bool begin(int priority);
     bool read_form(httpd_req_t *req, char *out, size_t out_sz, size_t &out_len);
+    bool read_form_psram(httpd_req_t *req, char **out_psram_ptr);
 };
 
 #endif // _XSERVER2_H
