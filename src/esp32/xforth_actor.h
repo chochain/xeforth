@@ -2,8 +2,9 @@
 #ifndef _XFORTH_ACTOR_H
 #define _XFORTH_ACTOR_H
 #pragma once
+
 #include "xactor.h"
-#include <atomic>  // Fix: Includes missing atomic utilities explicitly
+#include <atomic>
 
 extern int forth_vm(const char *cmd, void(*hook)(int, const char*));
 
@@ -11,13 +12,16 @@ class ForthActor : public BaseActor {
 private:
     static uint32_t          _active_sid;           ///< active session
     static std::atomic<bool> _abort;                ///< abort flag
+    static uint32_t          _feedback_cnt;
 
     static void feedback(int len, const char *rst) {
         DEBUG("  xforth[%d] >> <%d>%s", _active_sid, len, rst);
         if (_abort.load()) return;
 
-        // 1. Send feedback back over the web stream interface (Core 0 Session)
-        ActorMsg fb { MSG_FORTH_FEEDBACK, _active_sid, _active_sid };
+        ++_feedback_cnt;
+
+        // 1. Route stream chunks straight to the static SessionCoordinator
+        ActorMsg fb { MSG_FORTH_FEEDBACK, COORDINATOR_ACTOR_GLOBAL_ID, _active_sid };
         int sz = std::min(len, QUE_BUF_SZ - 1);
         memcpy(fb.buf, rst, sz);
         fb.buf[sz] = '\0';
@@ -33,51 +37,51 @@ private:
 public:
     ForthActor(uint32_t actor_id) : BaseActor(actor_id) {
         _abort.store(false);
+        LOG("[SYSTEM] Forth Actor Registered (ID: %d)\n", FORTH_ACTOR_GLOBAL_ID);
     }
-
-    static bool check_abort_signal() { return _abort.load(); }
 
     void receive(const ActorMsg &msg) override {
         switch (msg.type) {
-        case MSG_FORTH_EXEC: {
+        case MSG_FORTH_EXEC:
             DEBUG("  xforth[%d] << '%s'\n", msg.sid, (char*)msg.buf);
-
             _active_sid = msg.sid;
             _abort.store(false);
+            _feedback_cnt = 0;
 
             forth_vm(msg.buf, feedback);
-
-            ActorMsg eos { MSG_FORTH_DONE, msg.sid, msg.sid };
-            Sys.send(eos);
-        } break;
-        case MSG_FORTH_DONE:
-            DEBUG("  xforth[%d] << DONE\n", msg.sid);
+            
+            // Core Generation complete. Send EOF and pause execution of the next command.
+            {
+                ActorMsg eof { MSG_FORTH_EXEC_EOF, COORDINATOR_ACTOR_GLOBAL_ID, msg.sid };
+                eof.feedback_sent = _feedback_cnt;
+                Sys.send(eof);
+            }
             break;
+
+        case MSG_FORTH_EOF_ACK:
+            DEBUG("  xforth[%d] << EOF_ACT\n", msg.sid);
+            // The Coordinator confirmed network buffers are clear. Safe to close transaction out-of-order free!
+            {
+                ActorMsg done { MSG_FORTH_DONE, COORDINATOR_ACTOR_GLOBAL_ID, msg.sid };
+                Sys.send(done);
+            }
+            break;
+
+        case MSG_FORTH_ABORT:
+            DEBUG("  xforth[%d] << ABORT\n", msg.sid);
+            if (msg.sid == _active_sid) {
+                _abort.store(true);
+            }
+            break;
+
         case MSG_GUI_TOUCH_TRIGGER:
             LOG("xgl touch: (%d, %d)\n", msg.touch.x, msg.touch.y);
             break;
-        case MSG_FORTH_ABORT: if (msg.sid == _active_sid) {
-            DEBUG("  xforth[%d] << ABORT\n", msg.sid);
-            _abort.store(true);
             
-            ActorMsg fb { MSG_FORTH_FEEDBACK, msg.sid, msg.sid };
-            snprintf(fb.buf, sizeof(fb.buf), "\r\n[SYSTEM] Broken via Display Interface.\r\n");
-            Sys.send(fb);
-            
-            ActorMsg eos { MSG_FORTH_DONE, msg.sid, msg.sid };
-            Sys.send(eos);
-        } break;
         default:
             LOG("msg.type=%d not supported\n", msg.type);
             break;
         }
     }
 };
-
-// C-linkage bridge function to wire directly into your core C Forth engine's interpreter loops
-#if 0
-extern "C" bool forth_abort() {
-    return ForthActor::check_abort_signal();
-}
-#endif 
 #endif // _XFORTH_ACTOR_H
