@@ -3,7 +3,7 @@
 /// @file
 /// @brief Web Server class implementation (esp_http_server v2.0.16)
 ///
-#include "xserver_coordinator.h"
+#include "xserver_mux.h"
 #include "xserver2.h"
 #include "esp_heap_caps.h"
 
@@ -144,7 +144,7 @@ static void handle_overflow(void* arg, const char* failed_line) {
 }
 
 // Instantiate the single persistent static tracking coordinator instance
-static SessionCoordinator gCoordinator(COORDINATOR_ACTOR_GLOBAL_ID);
+static SessionMux gSesMux(SESMUX_ACTOR_ID);
 
 static esp_err_t handle_abort(httpd_req_t *req) {
     char     buf[32];
@@ -158,10 +158,10 @@ static esp_err_t handle_abort(httpd_req_t *req) {
     }
 
     if (sid != 0) {
-        ActorMsg x { MSG_FORTH_ABORT, FORTH_ACTOR_GLOBAL_ID, sid };
+        ActorMsg x { MSG_FORTH_ABORT, FORTH_ACTOR_ID, sid };
         Sys.send(x, 0, true);
         
-        ActorMsg coord_abort { MSG_FORTH_ABORT, COORDINATOR_ACTOR_GLOBAL_ID, sid };
+        ActorMsg coord_abort { MSG_FORTH_ABORT, SESMUX_ACTOR_ID, sid };
         Sys.send(coord_abort, 0, true);
 
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Execution Aborted");
@@ -216,22 +216,22 @@ static esp_err_t handle_execute(httpd_req_t *req) {
 
     LOG("xserver2 handle_execute fd=%d\n", client_sockfd);
     // Stream the code directly to external memory
-    char* psram_string_buffer = nullptr;
-    if (!server->read_form_psram(req, &psram_string_buffer)) {
+    char* psram_buf = nullptr;
+    if (!server->read_form_psram(req, &psram_buf)) {
         return ESP_FAIL;
     }
 
     uint32_t sid = Sys.alloc_id();
-    size_t total_bytes = strlen(psram_string_buffer);
+    size_t   len = strlen(psram_buf);
 
     // Register session metadata into the fixed index matrix
-    gCoordinator.register_new_connection(sid, client_sockfd, req->handle, psram_string_buffer, total_bytes);
+    gSesMux.register_new_conn(sid, client_sockfd, req->handle, psram_buf, len);
     
     return ESP_OK;
 }
 
 bool XServer::begin(int priority) {
-    Sys.register_actor(&gCoordinator);
+    Sys.register_actor(&gSesMux);
     setup();
     return true;
 }
