@@ -19,7 +19,7 @@ const char *APP_VERSION = "xeForth v1.0";
 ///
 #include "xactor.h"
 #include "xforth_actor.h"
-#include "xserver_coordinator.h"
+#include "xserver_mux.h"
 #include "xserver2.h"
 #include "xgl_actor.h"           ///< GUI Actor (LVGL+Touch)
 #include "../ceforth.h"          ///< Forth VM itself
