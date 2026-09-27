@@ -67,7 +67,6 @@ private:
                 Sys.send(done);
                 return; // 🟢 Safe exit, 0 recursion risk
             }
-
             char line_buf[QUE_BUF_SZ];
             size_t w = 0;
 
@@ -75,14 +74,11 @@ private:
             while (s.read_index < s.total_len) {
                 char c = s.psram_code_block[s.read_index++];
             
-                if (c == '+') c = ' ';
                 if (c == '\r' || c == '\0') continue;
-            
                 if (c == '\n') {
                     if (w > 0) break; // Complete command captured!
                     continue;
                 }
-
                 if (w < QUE_BUF_SZ - 1) {
                     line_buf[w++] = c;
                 }
@@ -96,7 +92,6 @@ private:
                 Sys.send(m);
                 return; // 🟢 Exit function. Wait for EOF handshake token.
             }
-        
             // If w == 0, the loop naturally continues to evaluate the next line 
             // without allocating any extra stack frames!
         }
