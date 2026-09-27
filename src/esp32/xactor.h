@@ -18,9 +18,9 @@
 #define DEBUG(fmt, ...) Serial.printf(fmt, __VA_ARGS__)
 
 // Static Global Target Registry IDs
-#define FORTH_ACTOR_GLOBAL_ID       1
-#define GUI_ACTOR_GLOBAL_ID         2
-#define COORDINATOR_ACTOR_GLOBAL_ID 3  // Central Traffic Cop Actor ID
+#define SESMUX_ACTOR_ID 1  // Central Traffic Cop Actor ID
+#define FORTH_ACTOR_ID  2
+#define GUI_ACTOR_ID    3
 
 enum ActorMsgType {
     MSG_FORTH_EXEC,           /// Forward individual raw command line to VM
@@ -82,7 +82,7 @@ private:
             /// blocked at 0% CPU until new msg arrived
             if (xQueueReceive(sys->_queue, &msg, portMAX_DELAY) == pdTRUE) {
                 BaseActor *actor = sys->get_actor(msg.target_id);
-                LOG("\nactor%d.%d >> '%s'",
+                LOG("actor%d.%d >> '%s'\n",
                     msg.target_id, msg.sid,
                     msg.type==MSG_FORTH_DONE ? "DONE" : (char*)msg.buf);
                 if (actor) actor->receive(msg);
@@ -132,14 +132,14 @@ public:
     /// Bounded-wait send. ONLY call from threads that are not this queue's
     /// consumer (Forth task, httpd thread). Never from a dispatcher worker.
     bool send(const ActorMsg &msg, TickType_t ticks=QUE_WAIT_TICKS, bool priority=false) {
-        LOG("\nactor%d.%d << '%s'",
+        LOG("actor%d.%d << '%s'",
             msg.target_id, msg.sid,
             msg.type==MSG_FORTH_DONE ? "DONE" : (char*)msg.buf);
         if (!_queue) return false;
         bool rst = priority
              ? xQueueSendToFront(_queue, &msg, ticks) == pdPASS
              : xQueueSend(_queue, &msg, ticks) == pdPASS;
-        LOG("%s", rst ? "" : " => queue full");
+        LOG("%s\n", rst ? "" : " => queue full");
         
         return rst;
     }
