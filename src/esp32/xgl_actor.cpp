@@ -225,7 +225,7 @@ void XGL::init_hardware() {
     _disp_draw_buf    = (lv_color_t*)ps_malloc(raw_sz);
     
     if (_disp_draw_buf == NULL) {
-        ERR("Fatal: Failed to allocate frame canvas buffer in PSRAM!");
+        LOG("Fatal: Failed to allocate frame canvas buffer %x in PSRAM!", raw_sz);
         vTaskDelete(NULL);
     }
     lv_disp_draw_buf_init(&_draw_buf, _disp_draw_buf, NULL, buf_sz);
