@@ -1,6 +1,6 @@
 /// -*- mode: c++ -*-
-#ifndef _XSERVER_COORDINATOR_H
-#define _XSERVER_COORDINATOR_H
+#ifndef _XSERVER_MUX_H
+#define _XSERVER_MUX_H
 
 #include "xactor.h"
 
@@ -8,35 +8,35 @@
 #define MAX_SESSIONS   8
 
 struct SessionState {
-    uint32_t       sid       = 0;
-    int            fd        = -1;
-    httpd_handle_t hd        = nullptr;
-    bool           is_active = false;
+    uint32_t       sid        = 0;
+    int            fd         = -1;
+    httpd_handle_t hd         = nullptr;
+    bool           is_active  = false;
     
-    char           *psram_code_block = nullptr;
-    size_t         read_index = 0;
+    char           *mem_block = nullptr;
+    size_t         read_idx   = 0;
     size_t         total_len  = 0;
 
-    uint32_t       feedback_count  = 0;
-    uint32_t       feedback_total  = 0;
-    bool           waiting_for_eof = false;
+    uint32_t       fb_count   = 0;
+    uint32_t       fb_total   = 0;
+    bool           eof_wait   = false;
 };
 
-class SessionCoordinator : public BaseActor {
+class SessionMux : public BaseActor {
 private:
-    SessionState      _sessions[MAX_SESSIONS];
+    SessionState      _ses[MAX_SESSIONS];
     SemaphoreHandle_t _mutex;           // esp_http_server socket send isolation mutex
 
-    int find_session_slot(uint32_t sid) {
+    int find_slot(uint32_t sid) {
         for (int i = 0; i < MAX_SESSIONS; i++) {
-            if (_sessions[i].is_active && _sessions[i].sid == sid) return i;
+            if (_ses[i].is_active && _ses[i].sid == sid) return i;
         }
         return -1;
     }
 
     int get_empty_slot() {
         for (int i = 0; i < MAX_SESSIONS; i++) {
-            if (!_sessions[i].is_active) {
+            if (!_ses[i].is_active) {
                 return i; // Found an available structural slot!
             }
         }
@@ -57,11 +57,11 @@ private:
     }
 
     void dispatch_next_line(int slot) {
-        SessionState &s = _sessions[slot];
+        SessionState &s = _ses[slot];
     
         // Wrap the entire parsing block inside a flat execution loop
         while (true) {
-            if (s.read_index >= s.total_len) {
+            if (s.read_idx >= s.total_len) {
                 // All text segments consumed. Safely trigger completion event.
                 ActorMsg done { MSG_FORTH_DONE, COORDINATOR_ACTOR_GLOBAL_ID, s.sid };
                 Sys.send(done);
@@ -71,8 +71,8 @@ private:
             size_t w = 0;
 
             // Extract characters until reaching a clean newline delimiter
-            while (s.read_index < s.total_len) {
-                char c = s.psram_code_block[s.read_index++];
+            while (s.read_idx < s.total_len) {
+                char c = s.mem_block[s.read_idx++];
             
                 if (c == '\r' || c == '\0') continue;
                 if (c == '\n') {
@@ -98,14 +98,14 @@ private:
     }
     
     void check_and_handshake(int slot) {
-        SessionState &s = _sessions[slot];
+        SessionState &s = _ses[slot];
         
         // Only proceed if we have received the EOF message AND all feedback packets have arrived
-        if (s.waiting_for_eof && (s.feedback_count == s.feedback_total)) {
+        if (s.eof_wait && (s.fb_count == s.fb_total)) {
             // Reset counters for the next line sequence step
-            s.feedback_count = 0;
-            s.feedback_total = 0;
-            s.waiting_for_eof = false;
+            s.fb_count = 0;
+            s.fb_total = 0;
+            s.eof_wait = false;
 
             // 1. Handshake ACK back to Forth Actor to release its lock state
             ActorMsg ack{ MSG_FORTH_EOF_ACK, FORTH_ACTOR_GLOBAL_ID, s.sid };
@@ -116,10 +116,10 @@ private:
         }
     }
     
-    void terminate_session_slot(int slot) {
-        if (slot < 0 || !_sessions[slot].is_active) return;
+    void finish_slot(int slot) {
+        if (slot < 0 || !_ses[slot].is_active) return;
         
-        SessionState &s = _sessions[slot];
+        SessionState &s = _ses[slot];
         if (s.fd >= 0 && s.hd && xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             httpd_socket_send(s.hd, s.fd, "0\r\n\r\n", 5, 0);
             xSemaphoreGive(_mutex);
@@ -133,16 +133,16 @@ private:
     }
 
 public:
-    SessionCoordinator(uint32_t actor_id) : BaseActor(actor_id) {
+    SessionMux(uint32_t actor_id) : BaseActor(actor_id) {
         _mutex = xSemaphoreCreateBinary();
         xSemaphoreGive(_mutex);
     }
 
-    ~SessionCoordinator() override {
+    ~SessionMux() override {
         if (_mutex) vSemaphoreDelete(_mutex);
     }
 
-    void register_new_connection(uint32_t sid, int fd, httpd_handle_t hd, char* psram_buf, size_t len) {
+    void register_new_conn(uint32_t sid, int fd, httpd_handle_t hd, char* psram_buf, size_t len) {
         int slot = get_empty_slot();
         if (slot == -1) {
             LOG("[SC] Max session capacity %d hit! Rejecting request.\n", MAX_SESSIONS);
@@ -150,17 +150,17 @@ public:
             return;
         }
         
-        SessionState &s = _sessions[slot];
-        s.sid              = sid;
-        s.fd               = fd;
-        s.hd               = hd;
-        s.psram_code_block = psram_buf; 
-        s.total_len        = len;
-        s.read_index       = 0;
-        s.feedback_count   = 0;
-        s.feedback_total   = 0;
-        s.waiting_for_eof  = false;
-        s.is_active        = true;
+        SessionState &s = _ses[slot];
+        s.sid       = sid;
+        s.fd        = fd;
+        s.hd        = hd;
+        s.mem_block = psram_buf; 
+        s.total_len = len;
+        s.read_idx  = 0;
+        s.fb_count  = 0;
+        s.fb_total  = 0;
+        s.eof_wait  = false;
+        s.is_active = true;
 
         // Flush HTTP Chunked Transfer Encoding initial response headers line-by-line
         const char* headers =
@@ -176,21 +176,21 @@ public:
 
     void receive(const ActorMsg &msg) override {
         auto clean = [this](SessionState &s, const char *err) {
-            if (s.psram_code_block != nullptr) {
-                heap_caps_free(s.psram_code_block);
-                s.psram_code_block = nullptr;
+            if (s.mem_block != nullptr) {
+                heap_caps_free(s.mem_block);
+                s.mem_block = nullptr;
             }
             if (err) send_chunk(s.hd, s.fd, err, strlen(err));
         };
-        int slot = find_session_slot(msg.sid);
+        int slot = find_slot(msg.sid);
         if (slot < 0) return;
 
-        SessionState &s = _sessions[slot];
+        SessionState &s = _ses[slot];
 
         switch (msg.type) {
         case MSG_FORTH_FEEDBACK:
             DEBUG("[SC] %u >> '%s'\n", msg.sid, (char*)msg.buf);
-            s.feedback_count++; // 👈 Track arrival
+            s.fb_count++; // 👈 Track arrival
             send_chunk(s.hd, s.fd, msg.buf, strlen(msg.buf));
             
             // Check if this feedback was the last piece we were waiting for
@@ -204,8 +204,8 @@ public:
             // (Optional: flush hardware sockets if necessary)
 
             // Forth VM has finished generating, record the target number it sent
-            s.feedback_total  = msg.feedback_sent;
-            s.waiting_for_eof = true;
+            s.fb_total  = msg.feedback_sent;
+            s.eof_wait = true;
 
             // Verify if all feedbacks are already here, or if we need to wait for late packets
             check_and_handshake(slot);
@@ -214,13 +214,13 @@ public:
         case MSG_FORTH_DONE:
             DEBUG("[SC] %u DONE\n", msg.sid);
             clean(s, "");
-            terminate_session_slot(slot);
+            finish_slot(slot);
             break;
 
         case MSG_FORTH_ABORT:
             DEBUG("[SC] %u ABORT\n", msg.sid);
             clean(s, "\r\n[SYSTEM INTERRUPT] Execution Aborted via Panel.\r\n");
-            terminate_session_slot(slot);
+            finish_slot(slot);
             break;
 
         default:
