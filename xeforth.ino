@@ -2,63 +2,79 @@
 /// @file
 /// @brief xeForth implemented for ESP32
 ///
-/*
-[ WEB BROWSER                ] 
-[ CORE 0: Web Server Task    ] (Priority 6)
-[ CORE 0: Forth VM Task      ] (priority 5)
-[ CORE 1: LVGL Drawing Task  ] (priority 10)
-[ ST7701S / TAMC_GT911       ]
-*/
 ///====================================================================
 #include "soc/soc.h"                      /// * for brown out detector
 #include "soc/rtc_cntl_reg.h"             /// * RTC control registers
 ///
 ///> ESP32 WiFi setup
 ///
-#include "src/esp32/mcu.h"                ///< MCU specific Forth words
+#include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include "src/esp32/mcu_actor.h"          ///< MCU specific Forth words
 
-const char *WIFI_SSID = "Amitofo_4F";     ///< use your own SSID
-const char *WIFI_PASS = "25325754";       ///< and the password
+//const char *WIFI_SSID = "Amitofo_4F";     ///< use your own SSID
+//const char *WIFI_PASS = "25325754";       ///< and the password
+const char *WIFI_SSID = "iDafu";          ///< use your own SSID
+const char *WIFI_PASS = "AlseTron";       ///< and the password
 const int   WIFI_PORT = 80;               ///< and the password
 
-// Define structural payload contracts uniformly across your files
-// Instantiate Global Message-Routing Pipelines
-xQueWeb *web_bridge = NULL;
-xQueUI  *ui_bridge  = NULL;
+#define WORKER_TASK_COUNT 1
 
-// Instantiate the distinct, modular systems with custom parameters
-XServer myWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
-XGL     myUiRenderer(480, 480);
-XForth  myForthEngine(200, 10);
+ActorSystem Sys; // Global instantiation assignment
+
+uint32_t          ForthActor::_active_sid   = 0;
+std::atomic<bool> ForthActor::_abort(false);
+uint32_t          ForthActor::_feedback_cnt = 0;
+
+XServer       gWebServer(WIFI_SSID, WIFI_PASS, WIFI_PORT);
+ForthActor    gForthActor(FORTH_ACTOR_ID);
+XGL           gUiRenderer(GUI_ACTOR_ID, 480, 480);
+TimerHandle_t gTimer       = nullptr;
+
+void timer_callback(TimerHandle_t xTimer) {
+    ActorMsg msg { MSG_SYS_TELEMETRY, GUI_ACTOR_ID, 0 };
+    msg.memory.free_heap_kb  = ESP.getFreeHeap() / 1024;
+    msg.memory.free_psram_kb = ESP.getFreePsram() / 1024;
+    Sys.send(msg);
+}
 
 void setup() {
     delay(200);
     Serial.begin(115200);
+    
+    // 1. Boot up the central conveyor thread pool system on Core 0 at priority 5
+    Sys.begin(WORKER_TASK_COUNT, 5);
+    Serial.printf("\n[SYSTEM] xeForth Actor Engine Initializing...\n");
 
-    // 1. Build the non-fragmenting communications pipeline channels
-    web_bridge = new xQueWeb(5, 5);
-    ui_bridge  = new xQueUI(5, 5);
+    // 2. Register the Core 0 Forth Actor
+    Sys.register_actor(&gForthActor);
+    Serial.printf("[SYSTEM] Forth Actor Registered (ID: %d)\n", FORTH_ACTOR_ID);
 
-    if (web_bridge == NULL || ui_bridge == NULL) {
-        Serial.println("Critical: Failed to generate system pipelines.");
-        while(1);
+    // 3. Register the Core 1 Graphics Engine Canvas Actor at priority 10
+    Sys.register_actor(&gUiRenderer);
+    gUiRenderer.begin(10); 
+    Serial.printf("[SYSTEM] GUI Actor Registered (ID: %d)\n", GUI_ACTOR_ID);
+
+    // 4. Start the Web Server Subsystem
+    // This internally boots the network link and registers the SessionCoordinator
+    Serial.printf("[SYSTEM] WebServer %s.\n", gWebServer.begin(4) ? "started" : "failed");
+
+    mcu_init();
+#if 0
+    // 5. Start the Telemetry Pump
+    gTimer = xTimerCreate(
+        "sys_metric_pump",
+        pdMS_TO_TICKS(500),
+        pdTRUE,                     
+        nullptr,
+        timer_callback
+    );
+    if (!gTimer || xTimerStart(gTimer, pdMS_TO_TICKS(50)) != pdPASS) {
+        ERR("sys_metric_timer not available");
     }
-    // 2. Deploy Web Server Engine ──> Core 0 (Priority 6)
-    myWebServer.begin(web_bridge, 6);
-
-    // 3. Deploy High-Performance Graphic Canvas Engine ──> Core 1 (Priority 10)
-    // We give the UI the highest priority layer to guarantee responsive drawing updates
-    myUiRenderer.begin(ui_bridge, 10);
-
-    // 4. Deploy Forth VM Interpreter Engine ──> Core 0 (Priority 5)
-    mcu_init();                         ///> initialize Forth VM
-
-    myForthEngine.begin(web_bridge, ui_bridge, 5);
-
-    // 5. Safely delete the empty Arduino loop task to reclaim internal SRAM boundaries
+#endif 
     vTaskDelete(NULL);
 }
 
-void loop() {
-    // Left empty and uncalled because loopTask is securely deleted
-}
+void loop() {}

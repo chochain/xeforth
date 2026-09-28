@@ -98,8 +98,10 @@ typedef int32_t         DU;
 ///@{
 #if (ARDUINO || ESP32)
     #include <Arduino.h>
+    #include "esp_task_wdt.h"
     #define DALIGN(sz)      (sz)
     #define to_string(i)    string(String(i).c_str())
+    #define yield()         vTaskDelay(1)
 
 #else  // !(ARDUINO || ESP32)
     #include <chrono>

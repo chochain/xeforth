@@ -1,5 +1,5 @@
-#ifndef __EFORTH_PLATFORM_MCU_H
-#define __EFORTH_PLATFORM_MCU_H
+#ifndef _MCU_ACTOR_H
+#define _MCU_ACTOR_H
 ///
 /// @file
 /// @brief eForth implemented for ESP32
@@ -19,9 +19,9 @@ const char *APP_VERSION = "xeForth v1.0";
 ///
 #include "xactor.h"
 #include "xforth_actor.h"
-#include "xforth.h"              ///< Forth VM interface
-#include "xserver.h"             ///< ESP32 Async Web Server
-#include "xgl.h"                 ///< UI, LVGL+Touch interface
+#include "xserver_mux.h"
+#include "xserver2.h"
+#include "xgl_actor.h"           ///< GUI Actor (LVGL+Touch)
 #include "../ceforth.h"          ///< Forth VM itself
 
 extern void forth_init();
@@ -109,5 +109,5 @@ void mcu_init() {
 
     mem_stat();
 }
-#endif // __EFORTH_PLATFORM_MCU_H
+#endif // _MCU_ACTOR_H
 

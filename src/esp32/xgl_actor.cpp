@@ -2,7 +2,7 @@
 /// @file
 /// @brief ESP32-S3 4848S040 (ST7701S) LVGL Renderer
 ///
-#include "xgl.h"
+#include "xgl_actor.h"
 #include <esp_heap_caps.h>
 
 // 1. Declare the compiled C-array font file asset
@@ -31,7 +31,7 @@ void my_lv_ui_updater_cb(void * user_data) {
     // 1. Cast the raw pointer back to our fixed structure
     auto* payload = static_cast<lv_ui_update_t*>(user_data);
     
-    if (payload != nullptr && my_lvgl_console_label != nullptr) {
+    if (payload && my_lvgl_console_label) {
         // 2. Perform the UI update safely on the main thread
         // For example, appending the Forth output text straight to an LVGL text area or label
         lv_label_ins_text(my_lvgl_console_label, LV_LABEL_POS_LAST, payload->message);
@@ -48,7 +48,6 @@ void my_lv_ui_updater_cb(void * user_data) {
 void my_touchpad_read(lv_indev_drv_t *touch_drv, lv_indev_data_t *data) {
     static int last_x = 0;
     static int last_y = 0;
-    static uint32_t last_touch_time = 0;
     TAMC_GT911 *ts = (TAMC_GT911*)touch_drv->user_data;
     
     ts->read();
@@ -57,47 +56,48 @@ void my_touchpad_read(lv_indev_drv_t *touch_drv, lv_indev_data_t *data) {
         int touchY = 480 - ts->points[0].y;
 
         if (touchX >= 0 && touchX < 480 && touchY >= 0 && touchY < 480) {
-            if (millis() - last_touch_time < 30 && abs(touchX - last_x) < 3 && abs(touchY - last_y) < 3) {
-                data->state   = LV_INDEV_STATE_PR;
-                data->point.x = last_x;
-                data->point.y = last_y;
-                return;
-            }
-            last_x = touchX;
-            last_y = touchY;
-            last_touch_time = millis();
-
             data->state   = LV_INDEV_STATE_PR;
             data->point.x = touchX;
             data->point.y = touchY;
+
+            static uint32_t timer = millis() + 100;
+            if (millis() > timer) { 
+                ActorMsg touch_msg { MSG_GUI_TOUCH_TRIGGER, FORTH_ACTOR_ID };
+                touch_msg.touch.x = touchX;
+                touch_msg.touch.y = touchY;
+                touch_msg.touch.state = 1;
+                Sys.send(touch_msg);
+                timer += 100;
+            }
         }
-    } else {
+    }
+    else {
         data->state = LV_INDEV_STATE_REL;
     }
 }
 
-bool XGL::begin(xQueUI *ui, int priority) {
-    if (ui == NULL) return false;
-    _ui = ui;
+void XGL::receive(const ActorMsg &msg) {
+    // ️Apply Backpressure: Block the calling Core 0 worker task if Core 1 is saturated
+    if (xQueueSend(_mailbox, &msg, 0) != pdTRUE) {
+        LOG("XGL full drop: '%s'", (char*)msg.buf);
+    }
+}
 
-    // Launch the background FreeRTOS execution thread pinned strictly to CORE 1
-    // We pass "this" into the 4th parameter slot to bridge the class context natively.
+bool XGL::begin(int priority) {
     BaseType_t xReturned = xTaskCreatePinnedToCore(
         [](void *pv) { static_cast<XGL*>(pv)->run(); },
-        "LVGL_Render_Task",    // Task string identifier name
-        8192,                  // Task stack depth allocation (bytes)
-        (void*)this,           // 👈 PASS 'THIS' CONTEXT POINTER HERE
-        priority,              // High priority layer to prevent frame stutter
-        &_task,                // Target task handle tracker
-        1                      // Pinned strictly to CORE 1
+        "LVGL_Render_Task",
+        8192,
+        (void*)this,
+        priority,
+        &_task,
+        1                  // Pinned strictly to Core 1
     );
     return (xReturned == pdPASS);
 }
 
 // Thread-safe terminal stream printer
 void XGL::term_print(const char *txt, lv_color_t textColor) {
-    DEBUG("    xgl#term_log <<+ '%s'", txt);
-    
     // Append text to terminal object canvas
     lv_textarea_add_text(_term_log, txt);
     
@@ -106,46 +106,29 @@ void XGL::term_print(const char *txt, lv_color_t textColor) {
     lv_textarea_set_cursor_pos(_term_log, txt_len);
 }
 
-void XGL::parse(char *cmd) {
-    // --- YOUR PROCESSING HUB (Serial / Forth / MQTT Interface) ---
-    if (strcmp(cmd, "help")==0) {
-        term_print("Guition Shell Commands:\n - CLEAR : Wipe Log Screen\n - STATS : Dump Device Telemetry\n", lv_color_white());
-    } 
-    else if (strcmp(cmd, "clear")==0) {
-        lv_textarea_set_text(_term_log, "");
-    } 
-    else if (strcmp(cmd, "stats")==0) {
-        char stats_buf[128];
-        sprintf(stats_buf, "Free Heap: %d KB | Free PSRAM: %d KB\n", 
-                ESP.getFreeHeap() / 1024, ESP.getFreePsram() / 1024);
-        term_print(stats_buf, lv_color_make(0, 255, 0));
-    } 
-    else {
-        // Mock output template for your Forth engine
-        term_print(cmd, lv_color_make(150, 150, 150));
-    }
-}
-
-void XGL::handle_req() {
-    msg_gui_t req;
-    // 5. Drain the entire queue backlog of vector tasks sent from Forth on Core 0
-    while (_ui->get_req(req)) {
-        DEBUG("    xgl#handle_req << op=%d, '%s'", req.op_code, req.buf ? (char*)req.buf : (char*)"NA");
-        switch (req.op_code) {
-        case VECTOR_CLEAR:
-            term_print("clear", lv_color_make(255, 0, 0));
+void XGL::process_mailbox() {
+    ActorMsg req;
+    while (xQueueReceive(_mailbox, &req, 0) == pdTRUE) {
+        DEBUG("    xgl << type=%d, '%s'\n", req.type, req.buf ? (char*)req.buf : (char*)"NA");
+        switch (req.type) {
+        case MSG_GUI_DRAW_CMD:
+            term_print(req.buf, lv_color_make(0, 255, 255));
             break;
-        case VECTOR_LINE: {
-            // Map parameters straight to an LVGL v8.4 coordinate array structure
-            lv_point_t pts[2] = {
-                { req.x1, req.y1 },
-                { req.x2, req.y2 }
-            };
-            // Direct vector drawing call into our isolated canvas object
-            lv_textarea_add_text(_term_log, "hit here");
+        case MSG_SYS_TELEMETRY: {
+#if 0            
+            char fmt_buf[32];
+            if (_sram_label) {
+                snprintf(fmt_buf, sizeof(fmt_buf), "SRAM: %d KB", req.memory.free_heap_kb);
+                lv_label_set_text(_sram_label, fmt_buf);
+            }
+            if (_psram_label) {
+                snprintf(fmt_buf, sizeof(fmt_buf), "PSRAM: %d KB", req.memory.free_psram_kb);
+                lv_label_set_text(_psram_label, fmt_buf);
+            }
+#endif
         } break;
-        case VECTOR_CMD:
-            term_print((char*)req.buf, lv_color_make(0, 255, 255));
+        default:
+            LOG("unknown req.type=%d\n", req.type);
             break;
         }
     }
@@ -183,7 +166,7 @@ void XGL::run() {
         // 6. Force LVGL to run layout ticks, handle touch states, and pump DMA pixels
         lv_timer_handler();
         
-        handle_req();
+        process_mailbox();
         update_chart();
         
         // 7. Yield to feed the Core 1 FreeRTOS hardware watchdog timers
@@ -242,7 +225,7 @@ void XGL::init_hardware() {
     _disp_draw_buf    = (lv_color_t*)ps_malloc(raw_sz);
     
     if (_disp_draw_buf == NULL) {
-        ERR("Fatal: Failed to allocate frame canvas buffer in PSRAM!");
+        LOG("Fatal: Failed to allocate frame canvas buffer %x in PSRAM!", raw_sz);
         vTaskDelete(NULL);
     }
     lv_disp_draw_buf_init(&_draw_buf, _disp_draw_buf, NULL, buf_sz);
